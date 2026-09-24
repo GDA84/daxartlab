@@ -88,7 +88,7 @@ main{position:relative;overflow:hidden;background:#262b2f}#map{position:absolute
 </div>
 <script>
 (()=>{'use strict';
-const $=id=>document.getElementById(id);const PAPER={A4:[210,297],A3:[297,420]};const EARTH=40075016.686;const TILE=512;const MAX_Z=12;let map,last=null;
+const $=id=>document.getElementById(id);const PAPER={A4:[210,297],A3:[297,420]};const EARTH=40075016.686;const TILE=512;const MAX_Z=12;let map,last=null,geometryWorker=null,generationToken=0;
 function status(msg,k=''){const e=$('status');e.textContent=msg;e.className='status'+(k?' '+k:'')}
 function n(id,f=0){const v=Number($(id).value);return Number.isFinite(v)?v:f}
 function dims(){let [w,h]=PAPER[$('paper').value]||PAPER.A4;if($('orientation').value==='landscape')[w,h]=[h,w];const m=Math.max(0,n('margin',10));return{pageW:w,pageH:h,w:Math.max(10,w-2*m),h:Math.max(10,h-2*m),m}}
@@ -98,7 +98,21 @@ function syncZoom(){if(!map)return;const lat=map.getCenter().lat*Math.PI/180,mpp
 function frameRect(){const f=$('frame').getBoundingClientRect(),m=$('map').getBoundingClientRect();return{l:f.left-m.left,t:f.top-m.top,r:f.right-m.left,b:f.bottom-m.top,w:f.width,h:f.height}}
 function frameBounds(){const r=frameRect(),nw=map.unproject([r.l,r.t]),se=map.unproject([r.r,r.b]);return{west:nw.lng,north:nw.lat,east:se.lng,south:se.lat}}
 function lonX(lon,z){return(lon+180)/360*Math.pow(2,z)}function latY(lat,z){const rad=lat*Math.PI/180;return(1-Math.asinh(Math.tan(rad))/Math.PI)/2*Math.pow(2,z)}
-function chooseZoom(bounds,target){const lat=(bounds.north+bounds.south)/2;let z=Math.round(Math.log2(EARTH*Math.cos(lat*Math.PI/180)/(TILE*Math.max(5,target))));z=Math.max(0,Math.min(MAX_Z,z));while(z>0){const x0=Math.floor(lonX(bounds.west,z)),x1=Math.floor(lonX(bounds.east,z)),y0=Math.floor(latY(bounds.north,z)),y1=Math.floor(latY(bounds.south,z));if((x1-x0+1)*(y1-y0+1)<=80)break;z--}return z}
+function chooseZoom(bounds,target){
+  const lat=(bounds.north+bounds.south)/2;
+  let z=Math.round(Math.log2(EARTH*Math.cos(lat*Math.PI/180)/(TILE*Math.max(5,target))));
+  z=Math.max(0,Math.min(MAX_Z,z));
+  while(z>0){
+    const x0=Math.floor(lonX(bounds.west,z)),x1=Math.floor(lonX(bounds.east,z)),
+          y0=Math.floor(latY(bounds.north,z)),y1=Math.floor(latY(bounds.south,z));
+    const tiles=(x1-x0+1)*(y1-y0+1);
+    const pw=Math.max(2,(lonX(bounds.east,z)-lonX(bounds.west,z))*TILE);
+    const ph=Math.max(2,(latY(bounds.south,z)-latY(bounds.north,z))*TILE);
+    if(tiles<=24 && pw*ph<=1500000) break;
+    z--;
+  }
+  return z
+}
 async function fetchBitmap(url){const r=await fetch(url,{mode:'cors',cache:'force-cache'});if(!r.ok)throw new Error(`DEM HTTP ${r.status}`);return createImageBitmap(await r.blob())}
 async function loadRaster(bounds,target){const z=chooseZoom(bounds,target),x0=Math.floor(lonX(bounds.west,z)),x1=Math.floor(lonX(bounds.east,z)),y0=Math.floor(latY(bounds.north,z)),y1=Math.floor(latY(bounds.south,z));const cols=x1-x0+1,rows=y1-y0+1,total=cols*rows;if(total>96)throw new Error(`Area troppo grande per il dettaglio richiesto (${total} tile). Aumenta Dettaglio DEM.`);$('statTiles').textContent=total;
  const mosaic=document.createElement('canvas');mosaic.width=cols*TILE;mosaic.height=rows*TILE;const ctx=mosaic.getContext('2d',{willReadFrequently:true});let done=0;
@@ -116,12 +130,80 @@ function stitch(segs){const by=new Map();segs.forEach((s,i)=>{for(const p of s){
 function rdp(pts,eps){if(pts.length<3||eps<=0)return pts;const sq=eps*eps;function d2(p,a,b){let x=a.x,y=a.y,dx=b.x-x,dy=b.y-y;if(dx||dy){const t=((p.x-x)*dx+(p.y-y)*dy)/(dx*dx+dy*dy);if(t>1){x=b.x;y=b.y}else if(t>0){x+=dx*t;y+=dy*t}}dx=p.x-x;dy=p.y-y;return dx*dx+dy*dy}function rec(a,b,o){let md=sq,idx=-1;for(let i=a+1;i<b;i++){const d=d2(pts[i],pts[a],pts[b]);if(d>md){md=d;idx=i}}if(idx>=0){if(idx-a>1)rec(a,idx,o);o.push(pts[idx]);if(b-idx>1)rec(idx,b,o)}}const o=[pts[0]];rec(0,pts.length-1,o);o.push(pts.at(-1));return o}
 function plen(p){let s=0;for(let i=1;i<p.length;i++)s+=Math.hypot(p[i].x-p[i-1].x,p[i].y-p[i-1].y);return s}
 function process(groups,r){const spacing=Math.max(1,n('spacing',50)),idxN=Math.max(1,Math.round(n('indexEvery',5))),eps=n('simplify',25)/r.groundMpp,min=n('minPath',500)/r.groundMpp,paths=[];for(const [lev,segs] of groups){for(let line of stitch(segs)){line=rdp(line,eps);const lp=plen(line);if(line.length<2||lp<min)continue;paths.push({lev,index:Math.abs(Math.round(lev/spacing))%idxN===0,points:line,lenM:lp*r.groundMpp})}}return paths}
-function render(paths,r){const svg=$('contourOverlay');svg.innerHTML='';svg.setAttribute('viewBox',`0 0 ${r.w} ${r.h}`);const pen=Math.max(.01,n('pen',.05));for(const p of paths){const el=document.createElementNS('http://www.w3.org/2000/svg','path');let d=`M ${p.points[0].x.toFixed(2)} ${p.points[0].y.toFixed(2)}`;for(let i=1;i<p.points.length;i++)d+=` L ${p.points[i].x.toFixed(2)} ${p.points[i].y.toFixed(2)}`;el.setAttribute('d',d);el.setAttribute('fill','none');el.setAttribute('stroke','#111');el.setAttribute('vector-effect','non-scaling-stroke');el.setAttribute('stroke-width',p.index?'1.1':'0.6');el.setAttribute('opacity',p.index?'1':'.82');svg.appendChild(el)}svg.style.display=$('showContours').checked?'block':'none'}
-async function generate(){try{last=null;status('Preparo area DEM…');const b=frameBounds(),r=await loadRaster(b,Math.max(10,n('demTarget',75)));status(`DEM pronto · ${r.w}×${r.h}px · ~${r.groundMpp.toFixed(1)} m/px`);const groups=generateSegments(r,Math.max(1,n('spacing',50)));status('Collego e semplifico le curve…');const paths=process(groups,r);render(paths,r);const verts=paths.reduce((a,p)=>a+p.points.length,0),draw=paths.reduce((a,p)=>a+p.lenM,0);$('statPaths').textContent=paths.length.toLocaleString('it-IT');$('statVertices').textContent=verts.toLocaleString('it-IT');$('statDraw').textContent=Math.round(draw).toLocaleString('it-IT');last={paths,r,b};status(`OK · ${paths.length} path · contour ogni ${n('spacing',50)} m`,'ok')}catch(e){console.error(e);status((e&&e.message)||String(e),'error')}}
+function render(paths,r){
+  const svg=$('contourOverlay');svg.innerHTML='';svg.setAttribute('viewBox',`0 0 ${r.w} ${r.h}`);
+  const totalVertices=paths.reduce((a,p)=>a+p.points.length,0);
+  const stride=Math.max(1,Math.ceil(totalVertices/150000));
+  let minor='',major='';
+  for(let pi=0;pi<paths.length;pi+=stride){
+    const p=paths[pi]; if(!p.points.length) continue;
+    let d=`M ${p.points[0].x.toFixed(2)} ${p.points[0].y.toFixed(2)}`;
+    for(let i=1;i<p.points.length;i++)d+=` L ${p.points[i].x.toFixed(2)} ${p.points[i].y.toFixed(2)}`;
+    if(p.index)major+=d+' ';else minor+=d+' ';
+  }
+  const add=(d,w,op)=>{if(!d)return;const el=document.createElementNS('http://www.w3.org/2000/svg','path');el.setAttribute('d',d);el.setAttribute('fill','none');el.setAttribute('stroke','#111');el.setAttribute('vector-effect','non-scaling-stroke');el.setAttribute('stroke-width',w);el.setAttribute('opacity',op);svg.appendChild(el)};
+  add(minor,'.6','.82');add(major,'1.1','1');
+  svg.style.display=$('showContours').checked?'block':'none'
+}
+
+function stopWorker(){
+  if(geometryWorker){geometryWorker.terminate();geometryWorker=null}
+}
+
+function runGeometryWorker(r){
+  stopWorker();
+  return new Promise((resolve,reject)=>{
+    const worker=new Worker('./contour-worker.js?v=5');
+    geometryWorker=worker;
+    worker.onmessage=e=>{
+      const m=e.data||{};
+      if(m.type==='progress'){status(m.message||'Calcolo…');return}
+      if(m.type==='done'){geometryWorker=null;worker.terminate();resolve(m);return}
+      if(m.type==='error'){geometryWorker=null;worker.terminate();reject(new Error(m.message||'Errore worker'))}
+    };
+    worker.onerror=e=>{geometryWorker=null;worker.terminate();reject(new Error(e.message||'Errore Web Worker'))};
+    const buffer=r.elev.buffer;
+    worker.postMessage({
+      type:'generate',w:r.w,h:r.h,buffer,
+      spacing:Math.max(1,n('spacing',50)),
+      simplifyM:Math.max(0,n('simplify',25)),
+      minPathM:Math.max(0,n('minPath',500)),
+      groundMpp:r.groundMpp,
+      indexEvery:Math.max(1,Math.round(n('indexEvery',5)))
+    },[buffer]);
+  })
+}
+
+async function generate(){
+  const token=++generationToken;
+  try{
+    stopWorker();last=null;
+    const btn=$('generate');btn.textContent='Elaborazione…';btn.disabled=true;
+    status('Preparo area DEM…');
+    const b=frameBounds(),r=await loadRaster(b,Math.max(10,n('demTarget',75)));
+    if(token!==generationToken)return;
+    status(`DEM pronto · ${r.w}×${r.h}px · ~${r.groundMpp.toFixed(1)} m/px · avvio worker…`);
+    const result=await runGeometryWorker(r);
+    if(token!==generationToken)return;
+    const paths=result.paths||[];
+    render(paths,r);
+    $('statPaths').textContent=paths.length.toLocaleString('it-IT');
+    $('statVertices').textContent=Number(result.vertices||0).toLocaleString('it-IT');
+    $('statDraw').textContent=Math.round(result.drawM||0).toLocaleString('it-IT');
+    last={paths,r,b};
+    const previewNote=(result.vertices||0)>150000?' · anteprima alleggerita, SVG completo':'';
+    status(`OK · ${paths.length} path · ${Number(result.vertices||0).toLocaleString('it-IT')} vertici${previewNote}`,'ok');
+  }catch(e){
+    console.error(e);
+    status((e&&e.message)||String(e),'error');
+  }finally{
+    const btn=$('generate');btn.textContent='Genera contour';btn.disabled=false;
+  }
+}
 function exportSvg(){if(!last){status('Genera prima le contour.','error');return}const d=dims(),pen=Math.max(.01,n('pen',.05)),idxN=Math.max(1,Math.round(n('indexEvery',5)));let minor='',major='';const sx=d.w/(last.r.w-1),sy=d.h/(last.r.h-1);const esc=v=>Number(v).toFixed(3).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1');for(const p of last.paths){let q=p.points[0],s=`M ${esc(d.m+q.x*sx)} ${esc(d.m+q.y*sy)}`;for(let i=1;i<p.points.length;i++){q=p.points[i];s+=` L ${esc(d.m+q.x*sx)} ${esc(d.m+q.y*sy)}`}if(p.index)major+=`<path d="${s}"/>\n`;else minor+=`<path d="${s}"/>\n`}const txt=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${d.pageW}mm" height="${d.pageH}mm" viewBox="0 0 ${d.pageW} ${d.pageH}">\n<g id="minor-contours" fill="none" stroke="#000" stroke-width="${pen}" stroke-linecap="round" stroke-linejoin="round">${minor}</g>\n<g id="index-contours" fill="none" stroke="#000" stroke-width="${pen*1.8}" stroke-linecap="round" stroke-linejoin="round">${major}</g>\n</svg>`;const blob=new Blob([txt],{type:'image/svg+xml'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=`contours_${n('spacing',50)}m_1-${Math.round(n('scale',250000))}.svg`;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);status(`SVG esportato · ${(blob.size/1024/1024).toFixed(2)} MB`,'ok')}
 async function search(){const q=$('search').value.trim();if(!q)return;const box=$('searchResults');box.style.display='block';box.innerHTML='<div class="result">Ricerca…</div>';try{const r=await fetch('https://photon.komoot.io/api/?limit=6&lang=it&q='+encodeURIComponent(q));if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();box.innerHTML='';if(!j.features?.length){box.innerHTML='<div class="result">Nessun risultato</div>';return}for(const f of j.features){const [lon,lat]=f.geometry.coordinates,p=f.properties||{},name=[p.name,p.city,p.state,p.country].filter(Boolean).join(', '),e=document.createElement('div');e.className='result';e.textContent=name||`${lat.toFixed(4)}, ${lon.toFixed(4)}`;e.onclick=()=>{map.easeTo({center:[lon,lat],duration:700});box.style.display='none';$('lat').value=lat.toFixed(6);$('lon').value=lon.toFixed(6)};box.appendChild(e)}}catch(e){box.innerHTML='<div class="result">Ricerca non disponibile: usa lat/lon.</div>'}}
-function init(){if(!window.maplibregl){status('MapLibre non caricato.','error');return}map=new maplibregl.Map({container:'map',center:[n('lon',13.63),n('lat',42.46)],zoom:9,dragRotate:false,style:{version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'bg',type:'background',paint:{'background-color':'#e8e8e4'}},{id:'osm',type:'raster',source:'osm',paint:{'raster-opacity':.88,'raster-saturation':-.45}}]}});map.scrollZoom.disable();map.doubleClickZoom.disable();map.boxZoom.disable();map.keyboard.disable();map.touchZoomRotate.disableRotation();map.on('load',()=>{layout();status('Pronto. Posiziona l’area e premi “Genera contour”.','ok')});map.on('moveend',()=>{$('lat').value=map.getCenter().lat.toFixed(6);$('lon').value=map.getCenter().lng.toFixed(6);syncZoom();last=null;$('contourOverlay').innerHTML=''});
- $('searchBtn').onclick=search;$('search').addEventListener('keydown',e=>{if(e.key==='Enter')search()});$('goCoords').onclick=()=>map.easeTo({center:[n('lon'),n('lat')],duration:500});$('generate').onclick=generate;$('exportSvg').onclick=exportSvg;$('showMap').onchange=()=>map.setLayoutProperty('osm','visibility',$('showMap').checked?'visible':'none');$('showContours').onchange=()=>{$('contourOverlay').style.display=$('showContours').checked?'block':'none'};['paper','orientation','margin','scale'].forEach(id=>$(id).addEventListener('change',()=>{layout();last=null;$('contourOverlay').innerHTML=''}));$('scale').addEventListener('input',()=>{clearTimeout(window.__st);window.__st=setTimeout(()=>{syncZoom();last=null;$('contourOverlay').innerHTML=''},250)});window.addEventListener('resize',layout)}
+function init(){if(!window.maplibregl){status('MapLibre non caricato.','error');return}map=new maplibregl.Map({container:'map',center:[n('lon',13.63),n('lat',42.46)],zoom:9,dragRotate:false,style:{version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'bg',type:'background',paint:{'background-color':'#e8e8e4'}},{id:'osm',type:'raster',source:'osm',paint:{'raster-opacity':.88,'raster-saturation':-.45}}]}});map.scrollZoom.disable();map.doubleClickZoom.disable();map.boxZoom.disable();map.keyboard.disable();map.touchZoomRotate.disableRotation();map.on('load',()=>{layout();status('Pronto. Posiziona l’area e premi “Genera contour”.','ok')});map.on('moveend',()=>{generationToken++;stopWorker();$('lat').value=map.getCenter().lat.toFixed(6);$('lon').value=map.getCenter().lng.toFixed(6);syncZoom();last=null;$('contourOverlay').innerHTML=''});
+ $('searchBtn').onclick=search;$('search').addEventListener('keydown',e=>{if(e.key==='Enter')search()});$('goCoords').onclick=()=>map.easeTo({center:[n('lon'),n('lat')],duration:500});$('generate').onclick=generate;$('exportSvg').onclick=exportSvg;$('showMap').onchange=()=>map.setLayoutProperty('osm','visibility',$('showMap').checked?'visible':'none');$('showContours').onchange=()=>{$('contourOverlay').style.display=$('showContours').checked?'block':'none'};['paper','orientation','margin','scale'].forEach(id=>$(id).addEventListener('change',()=>{generationToken++;stopWorker();layout();last=null;$('contourOverlay').innerHTML=''}));$('scale').addEventListener('input',()=>{clearTimeout(window.__st);window.__st=setTimeout(()=>{generationToken++;stopWorker();syncZoom();last=null;$('contourOverlay').innerHTML=''},250)});window.addEventListener('resize',layout)}
 init();
 })();
 
