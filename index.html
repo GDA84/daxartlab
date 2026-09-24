@@ -75,7 +75,7 @@ main{position:relative;overflow:hidden;background:#262b2f}#map{position:absolute
       <div class="stat"><b id="statDraw">—</b><span>m disegno</span></div>
       <div class="stat"><b id="statTiles">—</b><span>tile DEM</span></div>
     </div>
-    <button id="exportSvg" class="primary wide">Esporta SVG</button>
+    <button id="exportSvg" class="primary wide">Esporta SVG</button>\n    <button id="exportGeojson" class="wide" style="margin-top:8px">Esporta GIS (GeoJSON)</button>
     <div id="status" class="status">Inizializzazione…</div>
   </section>
 </aside>
@@ -136,7 +136,7 @@ async function loadRaster(bounds,target){const z=chooseZoom(bounds,target),x0=Ma
  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){status(`Scarico DEM… ${++done}/${total} tile · z${z}`);const bm=await fetchBitmap(`https://tiles.mapterhorn.com/${z}/${x}/${y}.webp`);ctx.drawImage(bm,(x-x0)*TILE,(y-y0)*TILE,TILE,TILE);bm.close?.()}
  const worldLeft=lonX(bounds.west,z)*TILE,worldRight=lonX(bounds.east,z)*TILE,worldTop=latY(bounds.north,z)*TILE,worldBottom=latY(bounds.south,z)*TILE;let sx=Math.floor(worldLeft-x0*TILE),sy=Math.floor(worldTop-y0*TILE),sw=Math.max(2,Math.ceil(worldRight-worldLeft)),sh=Math.max(2,Math.ceil(worldBottom-worldTop));sx=Math.max(0,Math.min(mosaic.width-2,sx));sy=Math.max(0,Math.min(mosaic.height-2,sy));sw=Math.min(sw,mosaic.width-sx);sh=Math.min(sh,mosaic.height-sy);
  const data=ctx.getImageData(sx,sy,sw,sh);const elev=new Float32Array(sw*sh);for(let i=0,j=0;i<data.data.length;i+=4,j++)elev[j]=data.data[i]*256+data.data[i+1]+data.data[i+2]/256-32768;
- const groundMpp=EARTH*Math.cos(((bounds.north+bounds.south)/2)*Math.PI/180)/(Math.pow(2,z)*TILE);return{w:sw,h:sh,elev,z,groundMpp}}
+ const groundMpp=EARTH*Math.cos(((bounds.north+bounds.south)/2)*Math.PI/180)/(Math.pow(2,z)*TILE);const originWorldX=x0*TILE+sx,originWorldY=y0*TILE+sy;return{w:sw,h:sh,elev,z,groundMpp,originWorldX,originWorldY}}
 function interp(a,b,va,vb,level){const den=vb-va,t=Math.abs(den)<1e-9?.5:(level-va)/den;return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}}
 function generateSegments(r,spacing){const groups=new Map(),W=r.w,H=r.h,E=r.elev;const add=(lev,a,b)=>{let g=groups.get(lev);if(!g){g=[];groups.set(lev,g)}g.push([a,b])};
  for(let y=0;y<H-1;y++){if(y%80===0)status(`Calcolo isolinee… ${Math.round(y/(H-1)*100)}%`);for(let x=0;x<W-1;x++){const tl=E[y*W+x],tr=E[y*W+x+1],bl=E[(y+1)*W+x],br=E[(y+1)*W+x+1];if(![tl,tr,bl,br].every(Number.isFinite))continue;const mn=Math.min(tl,tr,bl,br),mx=Math.max(tl,tr,bl,br);let lev=Math.ceil(mn/spacing)*spacing;for(;lev<=mx;lev+=spacing){const ints=[];const pTL={x,y},pTR={x:x+1,y},pBR={x:x+1,y:y+1},pBL={x,y:y+1};if((tl<lev)!=(tr<lev))ints.push({e:'T',p:interp(pTL,pTR,tl,tr,lev)});if((tr<lev)!=(br<lev))ints.push({e:'R',p:interp(pTR,pBR,tr,br,lev)});if((br<lev)!=(bl<lev))ints.push({e:'B',p:interp(pBR,pBL,br,bl,lev)});if((bl<lev)!=(tl<lev))ints.push({e:'L',p:interp(pBL,pTL,bl,tl,lev)});if(ints.length===2)add(lev,ints[0].p,ints[1].p);else if(ints.length===4){const m=(tl+tr+bl+br)/4;if(m>=lev){add(lev,ints[0].p,ints[3].p);add(lev,ints[1].p,ints[2].p)}else{add(lev,ints[0].p,ints[1].p);add(lev,ints[2].p,ints[3].p)}}}}}
@@ -218,6 +218,56 @@ async function generate(){
   }
 }
 function exportSvg(){if(!last){status('Genera prima le contour.','error');return}const d=dims(),pen=Math.max(.01,n('pen',.05)),idxN=Math.max(1,Math.round(n('indexEvery',5)));let minor='',major='';const sx=d.w/(last.r.w-1),sy=d.h/(last.r.h-1);const esc=v=>Number(v).toFixed(3).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1');for(const p of last.paths){let q=p.points[0],s=`M ${esc(d.m+q.x*sx)} ${esc(d.m+q.y*sy)}`;for(let i=1;i<p.points.length;i++){q=p.points[i];s+=` L ${esc(d.m+q.x*sx)} ${esc(d.m+q.y*sy)}`}if(p.index)major+=`<path d="${s}"/>\n`;else minor+=`<path d="${s}"/>\n`}const txt=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${d.pageW}mm" height="${d.pageH}mm" viewBox="0 0 ${d.pageW} ${d.pageH}">\n<g id="minor-contours" fill="none" stroke="#000" stroke-width="${pen}" stroke-linecap="round" stroke-linejoin="round">${minor}</g>\n<g id="index-contours" fill="none" stroke="#000" stroke-width="${pen*1.8}" stroke-linecap="round" stroke-linejoin="round">${major}</g>\n</svg>`;const blob=new Blob([txt],{type:'image/svg+xml'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=`contours_${n('spacing',50)}m_1-${Math.round(n('scale',250000))}.svg`;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);status(`SVG esportato · ${(blob.size/1024/1024).toFixed(2)} MB`,'ok')}
+function rasterPointToLonLat(p,r){
+  const worldSize=TILE*Math.pow(2,r.z);
+  const wx=r.originWorldX+p.x, wy=r.originWorldY+p.y;
+  const lon=wx/worldSize*360-180;
+  const mercY=Math.PI*(1-2*wy/worldSize);
+  const lat=Math.atan(Math.sinh(mercY))*180/Math.PI;
+  return [lon,lat];
+}
+
+function exportGeojson(){
+  if(!last){status('Genera prima le contour.','error');return}
+  const spacing=Math.max(1,n('spacing',50));
+  const features=last.paths.map((p,i)=>({
+    type:'Feature',
+    id:i+1,
+    properties:{
+      elevation_m:p.lev,
+      index_contour:Boolean(p.index),
+      contour_interval_m:spacing,
+      scale_denominator:Math.round(n('scale',250000)),
+      source:'Mapterhorn DEM'
+    },
+    geometry:{
+      type:'LineString',
+      coordinates:p.points.map(pt=>rasterPointToLonLat(pt,last.r))
+    }
+  }));
+  const geojson={
+    type:'FeatureCollection',
+    name:'DaxART Contours',
+    crs:{
+      type:'name',
+      properties:{name:'urn:ogc:def:crs:OGC:1.3:CRS84'}
+    },
+    properties:{
+      contour_interval_m:spacing,
+      generated_utc:new Date().toISOString()
+    },
+    features
+  };
+  const txt=JSON.stringify(geojson);
+  const blob=new Blob([txt],{type:'application/geo+json'});
+  const u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;
+  a.download=`contours_${spacing}m_EPSG4326.geojson`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(u),1000);
+  status(`GeoJSON esportato · ${features.length} feature · EPSG:4326 · ${(blob.size/1024/1024).toFixed(2)} MB`,'ok');
+}
+
 async function search(){
   const q=$('search').value.trim(); if(!q)return;
   const box=$('searchResults');
@@ -288,7 +338,7 @@ map.on('zoomend',()=>{
   syncScaleFromMap();
   last=null;$('contourOverlay').innerHTML='';
 });
- $('searchBtn').onclick=search;$('search').addEventListener('keydown',e=>{if(e.key==='Enter')search()});$('goCoords').onclick=()=>map.easeTo({center:[n('lon'),n('lat')],duration:500});$('generate').onclick=generate;$('exportSvg').onclick=exportSvg;$('showMap').onchange=()=>map.setLayoutProperty('osm','visibility',$('showMap').checked?'visible':'none');$('showContours').onchange=()=>{$('contourOverlay').style.display=$('showContours').checked?'block':'none'};['paper','orientation','margin'].forEach(id=>$(id).addEventListener('change',()=>{generationToken++;stopWorker();layout();last=null;$('contourOverlay').innerHTML=''}));$('scale').addEventListener('input',()=>{clearTimeout(window.__st);window.__st=setTimeout(()=>{generationToken++;stopWorker();syncZoom();last=null;$('contourOverlay').innerHTML=''},300)});window.addEventListener('resize',layout)}
+ $('searchBtn').onclick=search;$('search').addEventListener('keydown',e=>{if(e.key==='Enter')search()});$('goCoords').onclick=()=>map.easeTo({center:[n('lon'),n('lat')],duration:500});$('generate').onclick=generate;$('exportSvg').onclick=exportSvg;$('exportGeojson').onclick=exportGeojson;$('showMap').onchange=()=>map.setLayoutProperty('osm','visibility',$('showMap').checked?'visible':'none');$('showContours').onchange=()=>{$('contourOverlay').style.display=$('showContours').checked?'block':'none'};['paper','orientation','margin'].forEach(id=>$(id).addEventListener('change',()=>{generationToken++;stopWorker();layout();last=null;$('contourOverlay').innerHTML=''}));$('scale').addEventListener('input',()=>{clearTimeout(window.__st);window.__st=setTimeout(()=>{generationToken++;stopWorker();syncZoom();last=null;$('contourOverlay').innerHTML=''},300)});window.addEventListener('resize',layout)}
 init();
 })();
 
