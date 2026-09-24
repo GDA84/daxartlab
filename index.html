@@ -1,443 +1,130 @@
 <!doctype html>
 <html lang="it">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>DaxART Contour Plotter</title>
-  <meta name="description" content="Generatore di curve di livello SVG pensato per pen plotter, con intervallo contour libero." />
-  <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css" />
-  <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
-  <script src="https://unpkg.com/maplibre-contour@0.1.0/dist/index.min.js"></script>
-  <style>
-    :root{
-      --bg:#0b0d0f; --panel:#121518; --panel2:#171b1f; --line:#2a3036;
-      --text:#f2f4f5; --muted:#9ca6ad; --accent:#c9ff29; --danger:#ff6b6b;
-      --paper:#f8f7f1; --ink:#121212;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
-    button,input,select{font:inherit}
-    #app{height:100%;display:grid;grid-template-columns:360px 1fr;overflow:hidden}
-    aside{background:var(--panel);border-right:1px solid var(--line);overflow:auto;padding:18px 16px 28px}
-    h1{font-size:20px;margin:0 0 4px;letter-spacing:-.02em} .sub{color:var(--muted);font-size:12px;margin-bottom:18px}
-    section{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
-    section h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 10px;color:#dce2e5}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}
-    label{font-size:11px;color:#c7ced2}.hint{font-size:10px;color:var(--muted);line-height:1.35}
-    input,select{width:100%;background:#0d1012;color:var(--text);border:1px solid #343b42;border-radius:8px;padding:9px 10px;outline:none}
-    input:focus,select:focus{border-color:#6e7a84}
-    button{border:1px solid #384048;background:#22272c;color:var(--text);border-radius:8px;padding:9px 11px;font-weight:650;cursor:pointer}
-    button:hover{background:#2b3137}.primary{background:var(--accent);border-color:var(--accent);color:#111}.primary:hover{filter:brightness(.94);background:var(--accent)}
-    .wide{width:100%}.search{display:grid;grid-template-columns:1fr auto;gap:8px}.search button{white-space:nowrap}
-    #searchResults{display:none;background:#0c0f11;border:1px solid #343b42;border-radius:8px;margin-top:6px;overflow:hidden}
-    .result{padding:9px 10px;border-bottom:1px solid #23292e;font-size:12px;cursor:pointer;color:#dfe4e7}.result:last-child{border-bottom:0}.result:hover{background:#1d2328}
-    .status{margin-top:10px;font-size:11px;line-height:1.45;color:var(--muted);min-height:32px;padding:8px 9px;background:#0d1012;border-radius:8px;border:1px solid #252b30;white-space:pre-wrap}
-    .status.error{color:#ffd0d0;border-color:#693838;background:#1c1010}.status.ok{color:#dfffa0;border-color:#40521c}
-    .stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}.stat{background:#0d1012;border:1px solid #252b30;border-radius:8px;padding:8px}.stat b{display:block;font-size:15px}.stat span{font-size:10px;color:var(--muted)}
-    main{position:relative;min-width:0;background:#24282c;overflow:hidden}
-    #map{position:absolute;inset:0}
-    #frame{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border:2px solid var(--accent);box-shadow:0 0 0 9999px rgba(8,10,12,.36);pointer-events:none;z-index:5}
-    #frame::before{content:"AREA DI STAMPA";position:absolute;top:-25px;left:-2px;font-size:10px;letter-spacing:.06em;color:#121;background:var(--accent);padding:4px 6px;border-radius:5px 5px 0 0;font-weight:800}
-    #cross{position:absolute;left:50%;top:50%;width:14px;height:14px;transform:translate(-50%,-50%);z-index:6;pointer-events:none;opacity:.65}
-    #cross:before,#cross:after{content:"";position:absolute;background:var(--accent)}#cross:before{left:6px;top:0;width:2px;height:14px}#cross:after{top:6px;left:0;height:2px;width:14px}
-    #mapHelp{position:absolute;left:12px;bottom:12px;z-index:7;background:rgba(10,12,14,.84);backdrop-filter:blur(5px);padding:7px 9px;border-radius:7px;font-size:11px;color:#d4dade;border:1px solid #343a40}
-    .toggle{display:flex;align-items:center;gap:7px;font-size:11px;color:#cbd2d6;margin:6px 0}.toggle input{width:auto}
-    .maplibregl-ctrl-attrib{font-size:10px!important}.maplibregl-ctrl-logo{display:none!important}
-    @media(max-width:850px){#app{grid-template-columns:1fr;grid-template-rows:auto 60vh}aside{max-height:40vh;border-right:0;border-bottom:1px solid var(--line)}}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>DaxART Contour Plotter</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css"/>
+<script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+<style>
+:root{--bg:#0b0d0f;--panel:#111518;--line:#2b3238;--text:#f3f5f6;--muted:#9ca7ae;--accent:#c8ff29;--paper:rgba(255,255,255,.18)}
+*{box-sizing:border-box}html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}button,input,select{font:inherit}
+#app{height:100%;display:grid;grid-template-columns:365px 1fr;overflow:hidden}aside{overflow:auto;background:var(--panel);padding:16px 16px 26px;border-right:1px solid var(--line)}h1{font-size:19px;margin:0 0 3px}.sub{font-size:12px;color:#a8c4d8;margin-bottom:18px}section{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}.first{border:0;margin-top:0;padding-top:0}h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 10px}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.topgap{margin-top:9px}.field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}label{font-size:11px;color:#cbd2d6}input,select{width:100%;background:#0d1012;color:#fff;border:1px solid #343b42;border-radius:8px;padding:9px 10px;outline:0}button{border:1px solid #3b444c;background:#22282d;color:#fff;border-radius:8px;padding:9px 11px;font-weight:700;cursor:pointer}.primary{background:var(--accent);border-color:var(--accent);color:#111}.wide{width:100%}.search{display:grid;grid-template-columns:1fr auto;gap:8px}#searchResults{display:none;border:1px solid #343b42;border-radius:8px;overflow:hidden;margin-top:6px;background:#0d1012}.result{padding:9px 10px;font-size:12px;border-bottom:1px solid #272e34;cursor:pointer}.result:hover{background:#1c2227}.toggle{display:flex;gap:7px;align-items:center;margin:7px 0}.toggle input{width:auto}.stats{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}.stat{background:#0d1012;border:1px solid #272e34;border-radius:8px;padding:8px}.stat b{display:block;font-size:15px}.stat span{font-size:10px;color:var(--muted)}.status{white-space:pre-wrap;margin-top:8px;font-size:11px;line-height:1.4;padding:8px;background:#0d1012;border:1px solid #272e34;border-radius:8px;color:var(--muted);min-height:42px}.status.ok{color:#dcff92;border-color:#455b1b}.status.error{color:#ffcaca;border-color:#6a3333;background:#1b1010}
+main{position:relative;overflow:hidden;background:#262b2f}#map{position:absolute;inset:0}#frame{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);border:2px solid var(--accent);background:var(--paper);box-shadow:0 0 0 9999px rgba(6,8,10,.34);z-index:5;pointer-events:none}#frame:before{content:"AREA DI STAMPA";position:absolute;top:-24px;left:-2px;background:var(--accent);color:#111;padding:4px 6px;border-radius:5px 5px 0 0;font-size:10px;font-weight:900;letter-spacing:.04em}#contourOverlay{position:absolute;inset:0;width:100%;height:100%;overflow:visible}#cross{position:absolute;z-index:6;left:50%;top:50%;width:14px;height:14px;transform:translate(-50%,-50%);pointer-events:none}#cross:before,#cross:after{content:"";position:absolute;background:var(--accent)}#cross:before{left:6px;width:2px;height:14px}#cross:after{top:6px;height:2px;width:14px}#help{position:absolute;left:12px;bottom:12px;z-index:7;background:rgba(10,12,14,.85);border:1px solid #384047;border-radius:7px;padding:7px 9px;font-size:11px}.maplibregl-ctrl-logo{display:none!important}.maplibregl-ctrl-attrib{font-size:10px!important}
+@media(max-width:850px){#app{grid-template-columns:1fr;grid-template-rows:auto 60vh}aside{max-height:40vh;border-right:0;border-bottom:1px solid var(--line)}}
+
+</style>
 </head>
 <body>
 <div id="app">
-  <aside>
-    <h1>DaxART Contour Plotter</h1>
-    <div class="sub">SVG centerline per pen plotter · spacing contour libero</div>
+<aside>
+  <h1>DaxART Contour Plotter</h1>
+  <div class="sub">Contour SVG reali · spacing libero · pen-plotter first</div>
 
-    <section style="border-top:0;padding-top:0;margin-top:0">
-      <h2>Area</h2>
-      <div class="search">
-        <input id="search" type="search" placeholder="Cerca Gran Sasso, Vesuvio, Mont Blanc…" autocomplete="off" />
-        <button id="searchBtn">Cerca</button>
-      </div>
-      <div id="searchResults"></div>
-      <div class="row" style="margin-top:9px">
-        <div class="field"><label>Latitudine centro</label><input id="lat" type="number" step="0.000001" value="42.384" /></div>
-        <div class="field"><label>Longitudine centro</label><input id="lon" type="number" step="0.000001" value="13.550" /></div>
-      </div>
-      <button id="goCoords" class="wide">Vai alle coordinate</button>
-      <div class="hint" style="margin-top:7px">Trascina la mappa sotto il riquadro verde. Lo zoom è bloccato dalla scala di stampa.</div>
-    </section>
+  <section class="first">
+    <h2>Area</h2>
+    <div class="search"><input id="search" placeholder="Cerca Gran Sasso, Vesuvio, Mont Blanc…"><button id="searchBtn">Cerca</button></div>
+    <div id="searchResults"></div>
+    <div class="row topgap">
+      <div class="field"><label>Latitudine</label><input id="lat" type="number" step="0.000001" value="42.463348"></div>
+      <div class="field"><label>Longitudine</label><input id="lon" type="number" step="0.000001" value="13.631199"></div>
+    </div>
+    <button id="goCoords" class="wide">Vai alle coordinate</button>
+  </section>
 
-    <section>
-      <h2>Foglio e scala</h2>
-      <div class="row">
-        <div class="field"><label>Formato</label><select id="paper"><option value="A4">A4</option><option value="A3">A3</option></select></div>
-        <div class="field"><label>Orientamento</label><select id="orientation"><option value="landscape">Orizzontale</option><option value="portrait">Verticale</option></select></div>
-      </div>
-      <div class="row">
-        <div class="field"><label>Scala 1:</label><input id="scale" type="number" min="1000" step="1000" value="500000" /></div>
-        <div class="field"><label>Margine (mm)</label><input id="margin" type="number" min="0" max="50" step="1" value="10" /></div>
-      </div>
-    </section>
+  <section>
+    <h2>Foglio e scala</h2>
+    <div class="row">
+      <div class="field"><label>Formato</label><select id="paper"><option>A4</option><option>A3</option></select></div>
+      <div class="field"><label>Orientamento</label><select id="orientation"><option value="landscape">Orizzontale</option><option value="portrait">Verticale</option></select></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Scala 1:</label><input id="scale" type="number" min="1000" step="1000" value="250000"></div>
+      <div class="field"><label>Margine (mm)</label><input id="margin" type="number" min="0" max="50" value="10"></div>
+    </div>
+  </section>
 
-    <section>
-      <h2>Contour</h2>
-      <div class="row">
-        <div class="field"><label>Spacing verticale (m)</label><input id="spacing" type="number" min="1" step="1" value="50" /></div>
-        <div class="field"><label>Index ogni N</label><input id="indexEvery" type="number" min="1" step="1" value="5" /></div>
-      </div>
-      <div class="row">
-        <div class="field"><label>Penna (mm)</label><input id="pen" type="number" min="0.01" max="2" step="0.01" value="0.05" /></div>
-        <div class="field"><label>Index ×</label><input id="indexMult" type="number" min="1" max="5" step="0.1" value="1.8" /></div>
-      </div>
-      <button id="applyContours" class="primary wide">Aggiorna contour</button>
-    </section>
+  <section>
+    <h2>Contour</h2>
+    <div class="row">
+      <div class="field"><label>Spacing verticale (m)</label><input id="spacing" type="number" min="1" value="50"></div>
+      <div class="field"><label>Index ogni N</label><input id="indexEvery" type="number" min="1" value="5"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Dettaglio DEM (m/px)</label><input id="demTarget" type="number" min="10" step="10" value="75"></div>
+      <div class="field"><label>Penna (mm)</label><input id="pen" type="number" min="0.01" step="0.01" value="0.05"></div>
+    </div>
+    <button id="generate" class="primary wide">Genera contour</button>
+  </section>
 
-    <section>
-      <h2>Ottimizzazione SVG</h2>
-      <div class="row">
-        <div class="field"><label>Semplifica (m)</label><input id="simplify" type="number" min="0" step="1" value="25" /></div>
-        <div class="field"><label>Min path (m)</label><input id="minPath" type="number" min="0" step="10" value="750" /></div>
-      </div>
-      <label class="toggle"><input id="optimizeTravel" type="checkbox" checked /> Ottimizza ordine path (meno pen lifts travel)</label>
-      <label class="toggle"><input id="showHillshade" type="checkbox" checked /> Hillshade in anteprima</label>
-      <label class="toggle"><input id="showMap" type="checkbox" checked /> Basemap in anteprima</label>
-    </section>
+  <section>
+    <h2>Ottimizzazione</h2>
+    <div class="row">
+      <div class="field"><label>Semplifica (m)</label><input id="simplify" type="number" min="0" value="25"></div>
+      <div class="field"><label>Min path (m)</label><input id="minPath" type="number" min="0" value="500"></div>
+    </div>
+    <label class="toggle"><input id="showMap" type="checkbox" checked> Basemap in anteprima</label>
+    <label class="toggle"><input id="showContours" type="checkbox" checked> Contour in anteprima</label>
+  </section>
 
-    <section>
-      <h2>Output</h2>
-      <button id="analyze" class="wide">Analizza area di stampa</button>
-      <div class="stats">
-        <div class="stat"><b id="statPaths">—</b><span>path</span></div>
-        <div class="stat"><b id="statVertices">—</b><span>vertici</span></div>
-        <div class="stat"><b id="statDraw">—</b><span>m disegno</span></div>
-        <div class="stat"><b id="statTravel">—</b><span>m pen-up</span></div>
-      </div>
-      <button id="exportSvg" class="primary wide" style="margin-top:8px">Esporta SVG</button>
-      <div id="status" class="status">Caricamento motore…</div>
-    </section>
-  </aside>
-
-  <main>
-    <div id="map"></div>
-    <div id="frame"></div>
-    <div id="cross"></div>
-    <div id="mapHelp">drag = sposta area · scala bloccata dal pannello</div>
-  </main>
+  <section>
+    <h2>Output</h2>
+    <div class="stats">
+      <div class="stat"><b id="statPaths">—</b><span>path</span></div>
+      <div class="stat"><b id="statVertices">—</b><span>vertici</span></div>
+      <div class="stat"><b id="statDraw">—</b><span>m disegno</span></div>
+      <div class="stat"><b id="statTiles">—</b><span>tile DEM</span></div>
+    </div>
+    <button id="exportSvg" class="primary wide">Esporta SVG</button>
+    <div id="status" class="status">Inizializzazione…</div>
+  </section>
+</aside>
+<main>
+  <div id="map"></div>
+  <div id="frame"><svg id="contourOverlay" xmlns="http://www.w3.org/2000/svg"></svg></div>
+  <div id="cross"></div>
+  <div id="help">trascina la mappa · poi premi “Genera contour”</div>
+</main>
 </div>
-
 <script>
-(() => {
-  'use strict';
-
-  const $ = id => document.getElementById(id);
-  const statusEl = $('status');
-  const FRAME_PAD = 0.09; // spazio attorno al foglio nel viewport
-  const EARTH_CIRC = 40075016.686;
-  const PAPER = { A4:[210,297], A3:[297,420] };
-  let map, demSource;
-  let lastExport = null;
-  let rebuilding = false;
-
-  function status(msg, kind='') {
-    statusEl.textContent = msg;
-    statusEl.className = 'status' + (kind ? ' '+kind : '');
-  }
-
-  function num(id, fallback=0){ const v=Number($(id).value); return Number.isFinite(v)?v:fallback; }
-
-  function paperDims(){
-    let [w,h] = PAPER[$('paper').value] || PAPER.A4;
-    if ($('orientation').value === 'landscape') [w,h] = [h,w];
-    return {w,h};
-  }
-
-  function innerDims(){
-    const p=paperDims(), m=Math.max(0,num('margin',10));
-    return {w:Math.max(10,p.w-2*m), h:Math.max(10,p.h-2*m), pageW:p.w, pageH:p.h, margin:m};
-  }
-
-  function layoutFrame(){
-    const main=document.querySelector('main');
-    const {w,h}=innerDims();
-    const maxW=main.clientWidth*(1-2*FRAME_PAD), maxH=main.clientHeight*(1-2*FRAME_PAD);
-    let fw=maxW, fh=fw*h/w;
-    if(fh>maxH){ fh=maxH; fw=fh*w/h; }
-    const frame=$('frame'); frame.style.width=fw+'px'; frame.style.height=fh+'px';
-    syncZoomToScale();
-  }
-
-  function targetMetersPerPixel(){
-    const {w}=innerDims();
-    const fw=$('frame').getBoundingClientRect().width || 800;
-    const scale=Math.max(1,num('scale',500000));
-    return (w/fw) * (scale/1000); // mm/px * m/mm
-  }
-
-  function syncZoomToScale(){
-    if(!map) return;
-    const lat=map.getCenter().lat * Math.PI/180;
-    const mpp=targetMetersPerPixel();
-    const zoom=Math.log2((156543.03392804097*Math.cos(lat))/mpp);
-    if(Number.isFinite(zoom)) map.setZoom(Math.max(0,Math.min(17,zoom)));
-  }
-
-  function currentFrameScreen(){
-    const fr=$('frame').getBoundingClientRect();
-    const mr=$('map').getBoundingClientRect();
-    return {left:fr.left-mr.left, top:fr.top-mr.top, right:fr.right-mr.left, bottom:fr.bottom-mr.top, width:fr.width, height:fr.height};
-  }
-
-  function thresholdTable(minor, major){
-    const t={}; for(let z=0;z<=17;z++) t[z]=[minor,major]; return t;
-  }
-
-  function contourConfig(){
-    const spacing=Math.max(1,num('spacing',50));
-    const n=Math.max(1,Math.round(num('indexEvery',5)));
-    return {spacing, major:spacing*n, n};
-  }
-
-  function makeMap(){
-    if(!window.maplibregl || !window.mlcontour){
-      status('Librerie mappa non caricate. Ricarica la pagina; se persiste, la CDN è bloccata.', 'error');
-      return;
-    }
-
-    demSource = new mlcontour.DemSource({
-      url:'https://tiles.mapterhorn.com/{z}/{x}/{y}.webp',
-      encoding:'terrarium', maxzoom:12, worker:false, cacheSize:120, timeoutMs:15000
-    });
-    demSource.setupMaplibre(maplibregl);
-
-    map = new maplibregl.Map({
-      container:'map', center:[num('lon',13.55),num('lat',42.384)], zoom:9,
-      attributionControl:true,
-      dragRotate:false, pitchWithRotate:false,
-      style:{
-        version:8,
-        sources:{
-          osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'},
-          dem:{type:'raster-dem',tiles:[demSource.sharedDemProtocolUrl],encoding:'terrarium',tileSize:512,maxzoom:17,attribution:'Terrain © Mapterhorn'}
-        },
-        layers:[
-          {id:'background',type:'background',paint:{'background-color':'#e9e8e2'}},
-          {id:'osm',type:'raster',source:'osm',paint:{'raster-opacity':0.72,'raster-saturation':-0.65,'raster-contrast':0.05}},
-          {id:'hillshade',type:'hillshade',source:'dem',paint:{'hillshade-exaggeration':0.28,'hillshade-highlight-color':'#fffef7','hillshade-shadow-color':'#5e686d','hillshade-accent-color':'#586269'}}
-        ]
-      }
-    });
-
-    // La scala è controllata dal pannello, quindi il mouse serve solo per traslare.
-    map.scrollZoom.disable(); map.doubleClickZoom.disable(); map.boxZoom.disable();
-    map.keyboard.disable(); map.touchZoomRotate.disableRotation();
-
-    map.on('load', async()=>{
-      layoutFrame();
-      await rebuildContours();
-      status('Pronto. Trascina la mappa, scegli lo spacing e premi “Aggiorna contour”.','ok');
-    });
-    map.on('moveend',()=>{
-      $('lat').value=map.getCenter().lat.toFixed(6); $('lon').value=map.getCenter().lng.toFixed(6);
-      // Corregge la scala con la latitudine senza cambiare il centro.
-      syncZoomToScale(); lastExport=null;
-    });
-    map.on('error', e=>{
-      const m=e?.error?.message||String(e?.error||'Errore mappa');
-      if(/contour|dem|tile|fetch/i.test(m)) status('Errore dati mappa/DEM: '+m,'error');
-    });
-  }
-
-  async function rebuildContours(){
-    if(!map || !map.loaded() || rebuilding) return;
-    rebuilding=true; lastExport=null;
-    const {spacing,major}=contourConfig();
-    status(`Genero anteprima contour ogni ${spacing} m…`);
-    try{
-      if(map.getLayer('contour-lines')) map.removeLayer('contour-lines');
-      if(map.getSource('contours')) map.removeSource('contours');
-      map.addSource('contours',{
-        type:'vector',
-        tiles:[demSource.contourProtocolUrl({
-          thresholds:thresholdTable(spacing,major), elevationKey:'ele', levelKey:'level', contourLayer:'contours', buffer:1, overzoom:3
-        })], maxzoom:17
-      });
-      const pen=Math.max(.01,num('pen',.05));
-      const px=Math.max(.45,pen*3.7795275591);
-      const mult=Math.max(1,num('indexMult',1.8));
-      map.addLayer({
-        id:'contour-lines',type:'line',source:'contours','source-layer':'contours',
-        paint:{
-          'line-color':'#171717',
-          'line-opacity':0.92,
-          'line-width':['case',['>', ['get','level'],0],px*mult,px]
-        },
-        layout:{'line-cap':'round','line-join':'round'}
-      });
-      status(`Contour attive: ${spacing} m · index ${major} m`,'ok');
-    }catch(err){ status('Impossibile generare contour: '+(err.message||err),'error'); }
-    rebuilding=false;
-  }
-
-  async function geocode(){
-    const q=$('search').value.trim(); if(!q) return;
-    const box=$('searchResults'); box.style.display='block'; box.innerHTML='<div class="result">Ricerca…</div>';
-    try{
-      const url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&q='+encodeURIComponent(q);
-      const r=await fetch(url,{headers:{'Accept':'application/json'}}); if(!r.ok) throw new Error('HTTP '+r.status);
-      const data=await r.json();
-      if(!data.length){ box.innerHTML='<div class="result">Nessun risultato</div>'; return; }
-      box.innerHTML='';
-      data.forEach(item=>{
-        const d=document.createElement('div'); d.className='result'; d.textContent=item.display_name;
-        d.onclick=()=>{ map.easeTo({center:[+item.lon,+item.lat],duration:800}); box.style.display='none'; $('search').value=item.display_name.split(',')[0]; };
-        box.appendChild(d);
-      });
-    }catch(err){ box.innerHTML='<div class="result">Ricerca non disponibile. Usa lat/lon.</div>'; }
-  }
-
-  // Cohen-Sutherland, in coordinate schermo.
-  function clipSegment(a,b,r){
-    const INSIDE=0,LEFT=1,RIGHT=2,BOTTOM=4,TOP=8;
-    const code=p=>{let c=INSIDE;if(p.x<r.left)c|=LEFT;else if(p.x>r.right)c|=RIGHT;if(p.y<r.top)c|=TOP;else if(p.y>r.bottom)c|=BOTTOM;return c};
-    let p0={...a},p1={...b},c0=code(p0),c1=code(p1);
-    while(true){
-      if(!(c0|c1)) return [p0,p1]; if(c0&c1) return null;
-      const co=c0||c1; let x,y;
-      if(co&TOP){x=p0.x+(p1.x-p0.x)*(r.top-p0.y)/(p1.y-p0.y);y=r.top}
-      else if(co&BOTTOM){x=p0.x+(p1.x-p0.x)*(r.bottom-p0.y)/(p1.y-p0.y);y=r.bottom}
-      else if(co&RIGHT){y=p0.y+(p1.y-p0.y)*(r.right-p0.x)/(p1.x-p0.x);x=r.right}
-      else {y=p0.y+(p1.y-p0.y)*(r.left-p0.x)/(p1.x-p0.x);x=r.left}
-      if(co===c0){p0={x,y};c0=code(p0)}else{p1={x,y};c1=code(p1)}
-    }
-  }
-
-  function rdp(points,eps){
-    if(points.length<3||eps<=0) return points;
-    const sq=eps*eps;
-    function dist2(p,a,b){
-      let x=a.x,y=a.y,dx=b.x-x,dy=b.y-y;
-      if(dx||dy){const t=((p.x-x)*dx+(p.y-y)*dy)/(dx*dx+dy*dy);if(t>1){x=b.x;y=b.y}else if(t>0){x+=dx*t;y+=dy*t}}
-      dx=p.x-x;dy=p.y-y;return dx*dx+dy*dy;
-    }
-    function rec(first,last,out){let max=sq,idx=0;for(let i=first+1;i<last;i++){const d=dist2(points[i],points[first],points[last]);if(d>max){idx=i;max=d}}if(idx){if(idx-first>1)rec(first,idx,out);out.push(points[idx]);if(last-idx>1)rec(idx,last,out)}}
-    const out=[points[0]];rec(0,points.length-1,out);out.push(points[points.length-1]);return out;
-  }
-
-  function polyLength(line){let s=0;for(let i=1;i<line.length;i++)s+=Math.hypot(line[i].x-line[i-1].x,line[i].y-line[i-1].y);return s}
-  function keyPoint(p,tol=1){return Math.round(p.x/tol)+','+Math.round(p.y/tol)}
-
-  function stitchSegments(segments,tol=1.2){
-    if(!segments.length) return [];
-    const unused=new Set(segments.map((_,i)=>i));
-    const bucket=new Map();
-    const add=(k,i)=>{if(!bucket.has(k))bucket.set(k,new Set());bucket.get(k).add(i)};
-    segments.forEach((s,i)=>{add(keyPoint(s[0],tol),i);add(keyPoint(s[1],tol),i)});
-    const takeNear=(p,exclude)=>{
-      const set=bucket.get(keyPoint(p,tol)); if(!set)return null;
-      for(const i of set) if(unused.has(i)&&i!==exclude) return i; return null;
-    };
-    const lines=[];
-    while(unused.size){
-      const seed=unused.values().next().value; unused.delete(seed); let line=[segments[seed][0],segments[seed][1]];
-      let changed=true;
-      while(changed){changed=false; let idx=takeNear(line[line.length-1]); if(idx!=null){unused.delete(idx);let s=segments[idx];let d0=Math.hypot(s[0].x-line.at(-1).x,s[0].y-line.at(-1).y),d1=Math.hypot(s[1].x-line.at(-1).x,s[1].y-line.at(-1).y);line.push(d0<=d1?s[1]:s[0]);changed=true;continue}idx=takeNear(line[0]);if(idx!=null){unused.delete(idx);let s=segments[idx];let d0=Math.hypot(s[0].x-line[0].x,s[0].y-line[0].y),d1=Math.hypot(s[1].x-line[0].x,s[1].y-line[0].y);line.unshift(d0<=d1?s[1]:s[0]);changed=true}}
-      lines.push(line);
-    }
-    return lines;
-  }
-
-  function queryAndProcess(){
-    if(!map || !map.getLayer('contour-lines')) throw new Error('Contour non ancora pronte.');
-    const r=currentFrameScreen();
-    const feats=map.queryRenderedFeatures([[r.left,r.top],[r.right,r.bottom]],{layers:['contour-lines']});
-    if(!feats.length) throw new Error('Nessuna contour caricata nell’area. Attendi 2–3 secondi o sposta la mappa.');
-    const mpp=targetMetersPerPixel();
-    const epsPx=Math.max(0,num('simplify',25))/mpp;
-    const minPx=Math.max(0,num('minPath',750))/mpp;
-    const groups=new Map(); // elevation => segments
-    const segmentSeen=new Set();
-
-    function addGeom(coords,ele){
-      const segs=groups.get(ele)||[];
-      for(let i=1;i<coords.length;i++){
-        const A=map.project(coords[i-1]),B=map.project(coords[i]); const c=clipSegment(A,B,r); if(!c)continue;
-        const a={x:c[0].x-r.left,y:c[0].y-r.top},b={x:c[1].x-r.left,y:c[1].y-r.top};
-        if(Math.hypot(a.x-b.x,a.y-b.y)<0.05) continue;
-        const ka=keyPoint(a,.35),kb=keyPoint(b,.35),hash=ka<kb?ka+'|'+kb:kb+'|'+ka;
-        if(segmentSeen.has(ele+'|'+hash))continue; segmentSeen.add(ele+'|'+hash); segs.push([a,b]);
-      }
-      groups.set(ele,segs);
-    }
-
-    feats.forEach(f=>{
-      const ele=Number(f.properties?.ele); if(!Number.isFinite(ele)) return;
-      const g=f.geometry;if(!g)return;
-      if(g.type==='LineString')addGeom(g.coordinates,ele); else if(g.type==='MultiLineString')g.coordinates.forEach(c=>addGeom(c,ele));
-    });
-
-    const paths=[]; const {spacing,n}=contourConfig();
-    for(const [ele,segs] of groups){
-      for(let line of stitchSegments(segs,1.2)){
-        line=rdp(line,epsPx); const lenPx=polyLength(line); if(lenPx<minPx||line.length<2)continue;
-        const index=Math.abs(Math.round(ele/spacing))%n===0;
-        paths.push({ele,index,points:line,lenPx});
-      }
-    }
-    if(!paths.length) throw new Error('Tutte le linee sono state eliminate dai filtri. Riduci “Min path” o “Semplifica”.');
-
-    if($('optimizeTravel').checked) optimizeOrder(paths);
-    return {paths,r,mpp};
-  }
-
-  function optimizeOrder(paths){
-    if(paths.length>4500) return; // evita O(n²) eccessivo
-    const remaining=paths.slice(); const ordered=[]; let cur={x:0,y:0};
-    while(remaining.length){let best=0,bestD=Infinity,reverse=false;for(let i=0;i<remaining.length;i++){const p=remaining[i],a=p.points[0],b=p.points.at(-1);const da=(a.x-cur.x)**2+(a.y-cur.y)**2,db=(b.x-cur.x)**2+(b.y-cur.y)**2;if(da<bestD){bestD=da;best=i;reverse=false}if(db<bestD){bestD=db;best=i;reverse=true}}const p=remaining.splice(best,1)[0];if(reverse)p.points.reverse();ordered.push(p);cur=p.points.at(-1)}
-    paths.splice(0,paths.length,...ordered);
-  }
-
-  function analyze(){
-    try{
-      status('Analizzo geometria visibile…');
-      const data=queryAndProcess(); lastExport=data;
-      let verts=0,drawPx=0,travelPx=0,prev=null;
-      data.paths.forEach(p=>{verts+=p.points.length;drawPx+=p.lenPx;if(prev)travelPx+=Math.hypot(p.points[0].x-prev.x,p.points[0].y-prev.y);prev=p.points.at(-1)});
-      $('statPaths').textContent=data.paths.length.toLocaleString('it-IT'); $('statVertices').textContent=verts.toLocaleString('it-IT');
-      $('statDraw').textContent=(drawPx*data.mpp).toFixed(0); $('statTravel').textContent=(travelPx*data.mpp).toFixed(0);
-      status(`Analisi completata. ${data.paths.length} path pronti per l’SVG.`,'ok');
-      return data;
-    }catch(err){status(err.message||String(err),'error');return null}
-  }
-
-  function exportSvg(){
-    const data=lastExport||analyze(); if(!data)return;
-    const d=innerDims(), pen=Math.max(.01,num('pen',.05)), mult=Math.max(1,num('indexMult',1.8));
-    const sx=d.w/data.r.width, sy=d.h/data.r.height;
-    const esc=n=>Number(n).toFixed(3).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1');
-    const minor=[],major=[];
-    for(const p of data.paths){
-      const pts=p.points.map(q=>[d.margin+q.x*sx,d.margin+q.y*sy]);
-      let path=`M ${esc(pts[0][0])} ${esc(pts[0][1])}`;for(let i=1;i<pts.length;i++)path+=` L ${esc(pts[i][0])} ${esc(pts[i][1])}`;
-      (p.index?major:minor).push(`<path d="${path}"/>`);
-    }
-    const svg=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${d.pageW}mm" height="${d.pageH}mm" viewBox="0 0 ${d.pageW} ${d.pageH}">\n<title>DaxART Contour Plotter</title>\n<desc>scale 1:${Math.round(num('scale',500000))}; contour ${contourConfig().spacing}m; generated from Mapterhorn terrain</desc>\n<g id="minor-contours" fill="none" stroke="#000" stroke-width="${pen}" stroke-linecap="round" stroke-linejoin="round">\n${minor.join('\n')}\n</g>\n<g id="index-contours" fill="none" stroke="#000" stroke-width="${pen*mult}" stroke-linecap="round" stroke-linejoin="round">\n${major.join('\n')}\n</g>\n</svg>`;
-    const blob=new Blob([svg],{type:'image/svg+xml'}),url=URL.createObjectURL(blob),a=document.createElement('a');
-    const c=map.getCenter();a.href=url;a.download=`contours_${c.lat.toFixed(3)}_${c.lng.toFixed(3)}_1-${Math.round(num('scale',500000))}_${contourConfig().spacing}m.svg`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
-    status(`SVG esportato · ${(blob.size/1024/1024).toFixed(2)} MB · centerline reali in mm`,'ok');
-  }
-
-  $('searchBtn').onclick=geocode; $('search').addEventListener('keydown',e=>{if(e.key==='Enter')geocode()});
-  $('goCoords').onclick=()=>map?.easeTo({center:[num('lon'),num('lat')],duration:700});
-  $('applyContours').onclick=rebuildContours; $('analyze').onclick=analyze; $('exportSvg').onclick=exportSvg;
-  $('showHillshade').onchange=()=>map?.setLayoutProperty('hillshade','visibility',$('showHillshade').checked?'visible':'none');
-  $('showMap').onchange=()=>map?.setLayoutProperty('osm','visibility',$('showMap').checked?'visible':'none');
-  ['paper','orientation','scale','margin'].forEach(id=>$(id).addEventListener('change',()=>{layoutFrame();lastExport=null}));
-  ['pen','indexMult'].forEach(id=>$(id).addEventListener('change',rebuildContours));
-  window.addEventListener('resize',layoutFrame);
-
-  makeMap();
+(()=>{'use strict';
+const $=id=>document.getElementById(id);const PAPER={A4:[210,297],A3:[297,420]};const EARTH=40075016.686;const TILE=512;const MAX_Z=12;let map,last=null;
+function status(msg,k=''){const e=$('status');e.textContent=msg;e.className='status'+(k?' '+k:'')}
+function n(id,f=0){const v=Number($(id).value);return Number.isFinite(v)?v:f}
+function dims(){let [w,h]=PAPER[$('paper').value]||PAPER.A4;if($('orientation').value==='landscape')[w,h]=[h,w];const m=Math.max(0,n('margin',10));return{pageW:w,pageH:h,w:Math.max(10,w-2*m),h:Math.max(10,h-2*m),m}}
+function layout(){const main=document.querySelector('main'),d=dims(),pad=.08,maxW=main.clientWidth*(1-2*pad),maxH=main.clientHeight*(1-2*pad);let w=maxW,h=w*d.h/d.w;if(h>maxH){h=maxH;w=h*d.w/d.h}const f=$('frame');f.style.width=w+'px';f.style.height=h+'px';syncZoom();}
+function mppTarget(){const d=dims(),fw=$('frame').getBoundingClientRect().width||800;return d.w/fw*(n('scale',250000)/1000)}
+function syncZoom(){if(!map)return;const lat=map.getCenter().lat*Math.PI/180,mpp=mppTarget(),z=Math.log2(156543.03392804097*Math.cos(lat)/mpp);if(Number.isFinite(z))map.setZoom(Math.max(0,Math.min(16,z)))}
+function frameRect(){const f=$('frame').getBoundingClientRect(),m=$('map').getBoundingClientRect();return{l:f.left-m.left,t:f.top-m.top,r:f.right-m.left,b:f.bottom-m.top,w:f.width,h:f.height}}
+function frameBounds(){const r=frameRect(),nw=map.unproject([r.l,r.t]),se=map.unproject([r.r,r.b]);return{west:nw.lng,north:nw.lat,east:se.lng,south:se.lat}}
+function lonX(lon,z){return(lon+180)/360*Math.pow(2,z)}function latY(lat,z){const rad=lat*Math.PI/180;return(1-Math.asinh(Math.tan(rad))/Math.PI)/2*Math.pow(2,z)}
+function chooseZoom(bounds,target){const lat=(bounds.north+bounds.south)/2;let z=Math.round(Math.log2(EARTH*Math.cos(lat*Math.PI/180)/(TILE*Math.max(5,target))));z=Math.max(0,Math.min(MAX_Z,z));while(z>0){const x0=Math.floor(lonX(bounds.west,z)),x1=Math.floor(lonX(bounds.east,z)),y0=Math.floor(latY(bounds.north,z)),y1=Math.floor(latY(bounds.south,z));if((x1-x0+1)*(y1-y0+1)<=80)break;z--}return z}
+async function fetchBitmap(url){const r=await fetch(url,{mode:'cors',cache:'force-cache'});if(!r.ok)throw new Error(`DEM HTTP ${r.status}`);return createImageBitmap(await r.blob())}
+async function loadRaster(bounds,target){const z=chooseZoom(bounds,target),x0=Math.floor(lonX(bounds.west,z)),x1=Math.floor(lonX(bounds.east,z)),y0=Math.floor(latY(bounds.north,z)),y1=Math.floor(latY(bounds.south,z));const cols=x1-x0+1,rows=y1-y0+1,total=cols*rows;if(total>96)throw new Error(`Area troppo grande per il dettaglio richiesto (${total} tile). Aumenta Dettaglio DEM.`);$('statTiles').textContent=total;
+ const mosaic=document.createElement('canvas');mosaic.width=cols*TILE;mosaic.height=rows*TILE;const ctx=mosaic.getContext('2d',{willReadFrequently:true});let done=0;
+ for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){status(`Scarico DEM… ${++done}/${total} tile · z${z}`);const bm=await fetchBitmap(`https://tiles.mapterhorn.com/${z}/${x}/${y}.webp`);ctx.drawImage(bm,(x-x0)*TILE,(y-y0)*TILE,TILE,TILE);bm.close?.()}
+ const worldLeft=lonX(bounds.west,z)*TILE,worldRight=lonX(bounds.east,z)*TILE,worldTop=latY(bounds.north,z)*TILE,worldBottom=latY(bounds.south,z)*TILE;let sx=Math.floor(worldLeft-x0*TILE),sy=Math.floor(worldTop-y0*TILE),sw=Math.max(2,Math.ceil(worldRight-worldLeft)),sh=Math.max(2,Math.ceil(worldBottom-worldTop));sx=Math.max(0,Math.min(mosaic.width-2,sx));sy=Math.max(0,Math.min(mosaic.height-2,sy));sw=Math.min(sw,mosaic.width-sx);sh=Math.min(sh,mosaic.height-sy);
+ const data=ctx.getImageData(sx,sy,sw,sh);const elev=new Float32Array(sw*sh);for(let i=0,j=0;i<data.data.length;i+=4,j++)elev[j]=data.data[i]*256+data.data[i+1]+data.data[i+2]/256-32768;
+ const groundMpp=EARTH*Math.cos(((bounds.north+bounds.south)/2)*Math.PI/180)/(Math.pow(2,z)*TILE);return{w:sw,h:sh,elev,z,groundMpp}}
+function interp(a,b,va,vb,level){const den=vb-va,t=Math.abs(den)<1e-9?.5:(level-va)/den;return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}}
+function generateSegments(r,spacing){const groups=new Map(),W=r.w,H=r.h,E=r.elev;const add=(lev,a,b)=>{let g=groups.get(lev);if(!g){g=[];groups.set(lev,g)}g.push([a,b])};
+ for(let y=0;y<H-1;y++){if(y%80===0)status(`Calcolo isolinee… ${Math.round(y/(H-1)*100)}%`);for(let x=0;x<W-1;x++){const tl=E[y*W+x],tr=E[y*W+x+1],bl=E[(y+1)*W+x],br=E[(y+1)*W+x+1];if(![tl,tr,bl,br].every(Number.isFinite))continue;const mn=Math.min(tl,tr,bl,br),mx=Math.max(tl,tr,bl,br);let lev=Math.ceil(mn/spacing)*spacing;for(;lev<=mx;lev+=spacing){const ints=[];const pTL={x,y},pTR={x:x+1,y},pBR={x:x+1,y:y+1},pBL={x,y:y+1};if((tl<lev)!=(tr<lev))ints.push({e:'T',p:interp(pTL,pTR,tl,tr,lev)});if((tr<lev)!=(br<lev))ints.push({e:'R',p:interp(pTR,pBR,tr,br,lev)});if((br<lev)!=(bl<lev))ints.push({e:'B',p:interp(pBR,pBL,br,bl,lev)});if((bl<lev)!=(tl<lev))ints.push({e:'L',p:interp(pBL,pTL,bl,tl,lev)});if(ints.length===2)add(lev,ints[0].p,ints[1].p);else if(ints.length===4){const m=(tl+tr+bl+br)/4;if(m>=lev){add(lev,ints[0].p,ints[3].p);add(lev,ints[1].p,ints[2].p)}else{add(lev,ints[0].p,ints[1].p);add(lev,ints[2].p,ints[3].p)}}}}}
+ return groups}
+const pkey=p=>Math.round(p.x*1000)+','+Math.round(p.y*1000);
+function stitch(segs){const by=new Map();segs.forEach((s,i)=>{for(const p of s){const k=pkey(p);if(!by.has(k))by.set(k,[]);by.get(k).push(i)}});const unused=new Set(segs.map((_,i)=>i)),out=[];function extend(line,front){while(true){const p=front?line[0]:line[line.length-1],cand=(by.get(pkey(p))||[]).find(i=>unused.has(i));if(cand==null)break;unused.delete(cand);const s=segs[cand],d0=Math.hypot(s[0].x-p.x,s[0].y-p.y),q=d0<1e-4?s[1]:s[0];front?line.unshift(q):line.push(q)}}
+ while(unused.size){let seed=null;for(const i of unused){const s=segs[i],d0=(by.get(pkey(s[0]))||[]).filter(j=>unused.has(j)).length,d1=(by.get(pkey(s[1]))||[]).filter(j=>unused.has(j)).length;if(d0===1||d1===1){seed=i;break}}if(seed==null)seed=unused.values().next().value;unused.delete(seed);const line=[segs[seed][0],segs[seed][1]];extend(line,false);extend(line,true);out.push(line)}return out}
+function rdp(pts,eps){if(pts.length<3||eps<=0)return pts;const sq=eps*eps;function d2(p,a,b){let x=a.x,y=a.y,dx=b.x-x,dy=b.y-y;if(dx||dy){const t=((p.x-x)*dx+(p.y-y)*dy)/(dx*dx+dy*dy);if(t>1){x=b.x;y=b.y}else if(t>0){x+=dx*t;y+=dy*t}}dx=p.x-x;dy=p.y-y;return dx*dx+dy*dy}function rec(a,b,o){let md=sq,idx=-1;for(let i=a+1;i<b;i++){const d=d2(pts[i],pts[a],pts[b]);if(d>md){md=d;idx=i}}if(idx>=0){if(idx-a>1)rec(a,idx,o);o.push(pts[idx]);if(b-idx>1)rec(idx,b,o)}}const o=[pts[0]];rec(0,pts.length-1,o);o.push(pts.at(-1));return o}
+function plen(p){let s=0;for(let i=1;i<p.length;i++)s+=Math.hypot(p[i].x-p[i-1].x,p[i].y-p[i-1].y);return s}
+function process(groups,r){const spacing=Math.max(1,n('spacing',50)),idxN=Math.max(1,Math.round(n('indexEvery',5))),eps=n('simplify',25)/r.groundMpp,min=n('minPath',500)/r.groundMpp,paths=[];for(const [lev,segs] of groups){for(let line of stitch(segs)){line=rdp(line,eps);const lp=plen(line);if(line.length<2||lp<min)continue;paths.push({lev,index:Math.abs(Math.round(lev/spacing))%idxN===0,points:line,lenM:lp*r.groundMpp})}}return paths}
+function render(paths,r){const svg=$('contourOverlay');svg.innerHTML='';svg.setAttribute('viewBox',`0 0 ${r.w} ${r.h}`);const pen=Math.max(.01,n('pen',.05));for(const p of paths){const el=document.createElementNS('http://www.w3.org/2000/svg','path');let d=`M ${p.points[0].x.toFixed(2)} ${p.points[0].y.toFixed(2)}`;for(let i=1;i<p.points.length;i++)d+=` L ${p.points[i].x.toFixed(2)} ${p.points[i].y.toFixed(2)}`;el.setAttribute('d',d);el.setAttribute('fill','none');el.setAttribute('stroke','#111');el.setAttribute('vector-effect','non-scaling-stroke');el.setAttribute('stroke-width',p.index?'1.1':'0.6');el.setAttribute('opacity',p.index?'1':'.82');svg.appendChild(el)}svg.style.display=$('showContours').checked?'block':'none'}
+async function generate(){try{last=null;status('Preparo area DEM…');const b=frameBounds(),r=await loadRaster(b,Math.max(10,n('demTarget',75)));status(`DEM pronto · ${r.w}×${r.h}px · ~${r.groundMpp.toFixed(1)} m/px`);const groups=generateSegments(r,Math.max(1,n('spacing',50)));status('Collego e semplifico le curve…');const paths=process(groups,r);render(paths,r);const verts=paths.reduce((a,p)=>a+p.points.length,0),draw=paths.reduce((a,p)=>a+p.lenM,0);$('statPaths').textContent=paths.length.toLocaleString('it-IT');$('statVertices').textContent=verts.toLocaleString('it-IT');$('statDraw').textContent=Math.round(draw).toLocaleString('it-IT');last={paths,r,b};status(`OK · ${paths.length} path · contour ogni ${n('spacing',50)} m`,'ok')}catch(e){console.error(e);status((e&&e.message)||String(e),'error')}}
+function exportSvg(){if(!last){status('Genera prima le contour.','error');return}const d=dims(),pen=Math.max(.01,n('pen',.05)),idxN=Math.max(1,Math.round(n('indexEvery',5)));let minor='',major='';const sx=d.w/(last.r.w-1),sy=d.h/(last.r.h-1);const esc=v=>Number(v).toFixed(3).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1');for(const p of last.paths){let q=p.points[0],s=`M ${esc(d.m+q.x*sx)} ${esc(d.m+q.y*sy)}`;for(let i=1;i<p.points.length;i++){q=p.points[i];s+=` L ${esc(d.m+q.x*sx)} ${esc(d.m+q.y*sy)}`}if(p.index)major+=`<path d="${s}"/>\n`;else minor+=`<path d="${s}"/>\n`}const txt=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${d.pageW}mm" height="${d.pageH}mm" viewBox="0 0 ${d.pageW} ${d.pageH}">\n<g id="minor-contours" fill="none" stroke="#000" stroke-width="${pen}" stroke-linecap="round" stroke-linejoin="round">${minor}</g>\n<g id="index-contours" fill="none" stroke="#000" stroke-width="${pen*1.8}" stroke-linecap="round" stroke-linejoin="round">${major}</g>\n</svg>`;const blob=new Blob([txt],{type:'image/svg+xml'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=`contours_${n('spacing',50)}m_1-${Math.round(n('scale',250000))}.svg`;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);status(`SVG esportato · ${(blob.size/1024/1024).toFixed(2)} MB`,'ok')}
+async function search(){const q=$('search').value.trim();if(!q)return;const box=$('searchResults');box.style.display='block';box.innerHTML='<div class="result">Ricerca…</div>';try{const r=await fetch('https://photon.komoot.io/api/?limit=6&lang=it&q='+encodeURIComponent(q));if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();box.innerHTML='';if(!j.features?.length){box.innerHTML='<div class="result">Nessun risultato</div>';return}for(const f of j.features){const [lon,lat]=f.geometry.coordinates,p=f.properties||{},name=[p.name,p.city,p.state,p.country].filter(Boolean).join(', '),e=document.createElement('div');e.className='result';e.textContent=name||`${lat.toFixed(4)}, ${lon.toFixed(4)}`;e.onclick=()=>{map.easeTo({center:[lon,lat],duration:700});box.style.display='none';$('lat').value=lat.toFixed(6);$('lon').value=lon.toFixed(6)};box.appendChild(e)}}catch(e){box.innerHTML='<div class="result">Ricerca non disponibile: usa lat/lon.</div>'}}
+function init(){if(!window.maplibregl){status('MapLibre non caricato.','error');return}map=new maplibregl.Map({container:'map',center:[n('lon',13.63),n('lat',42.46)],zoom:9,dragRotate:false,style:{version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'bg',type:'background',paint:{'background-color':'#e8e8e4'}},{id:'osm',type:'raster',source:'osm',paint:{'raster-opacity':.88,'raster-saturation':-.45}}]}});map.scrollZoom.disable();map.doubleClickZoom.disable();map.boxZoom.disable();map.keyboard.disable();map.touchZoomRotate.disableRotation();map.on('load',()=>{layout();status('Pronto. Posiziona l’area e premi “Genera contour”.','ok')});map.on('moveend',()=>{$('lat').value=map.getCenter().lat.toFixed(6);$('lon').value=map.getCenter().lng.toFixed(6);syncZoom();last=null;$('contourOverlay').innerHTML=''});
+ $('searchBtn').onclick=search;$('search').addEventListener('keydown',e=>{if(e.key==='Enter')search()});$('goCoords').onclick=()=>map.easeTo({center:[n('lon'),n('lat')],duration:500});$('generate').onclick=generate;$('exportSvg').onclick=exportSvg;$('showMap').onchange=()=>map.setLayoutProperty('osm','visibility',$('showMap').checked?'visible':'none');$('showContours').onchange=()=>{$('contourOverlay').style.display=$('showContours').checked?'block':'none'};['paper','orientation','margin','scale'].forEach(id=>$(id).addEventListener('change',()=>{layout();last=null;$('contourOverlay').innerHTML=''}));$('scale').addEventListener('input',()=>{clearTimeout(window.__st);window.__st=setTimeout(()=>{syncZoom();last=null;$('contourOverlay').innerHTML=''},250)});window.addEventListener('resize',layout)}
+init();
 })();
+
 </script>
 </body>
 </html>
