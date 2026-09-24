@@ -83,7 +83,7 @@ main{position:relative;overflow:hidden;background:#262b2f}#map{position:absolute
   <div id="map"></div>
   <div id="frame"><svg id="contourOverlay" xmlns="http://www.w3.org/2000/svg"></svg></div>
   <div id="cross"></div>
-  <div id="help">trascina la mappa · poi premi “Genera contour”</div>
+  <div id="help">trascina = pan · rotellina = zoom · poi premi “Genera contour”</div>
 </main>
 </div>
 <script>
@@ -94,7 +94,24 @@ function n(id,f=0){const v=Number($(id).value);return Number.isFinite(v)?v:f}
 function dims(){let [w,h]=PAPER[$('paper').value]||PAPER.A4;if($('orientation').value==='landscape')[w,h]=[h,w];const m=Math.max(0,n('margin',10));return{pageW:w,pageH:h,w:Math.max(10,w-2*m),h:Math.max(10,h-2*m),m}}
 function layout(){const main=document.querySelector('main'),d=dims(),pad=.08,maxW=main.clientWidth*(1-2*pad),maxH=main.clientHeight*(1-2*pad);let w=maxW,h=w*d.h/d.w;if(h>maxH){h=maxH;w=h*d.w/d.h}const f=$('frame');f.style.width=w+'px';f.style.height=h+'px';syncZoom();}
 function mppTarget(){const d=dims(),fw=$('frame').getBoundingClientRect().width||800;return d.w/fw*(n('scale',250000)/1000)}
-function syncZoom(){if(!map)return;const lat=map.getCenter().lat*Math.PI/180,mpp=mppTarget(),z=Math.log2(156543.03392804097*Math.cos(lat)/mpp);if(Number.isFinite(z))map.setZoom(Math.max(0,Math.min(16,z)))}
+function syncZoom(){
+  if(!map)return;
+  const lat=map.getCenter().lat*Math.PI/180,mpp=mppTarget(),
+        z=Math.log2(156543.03392804097*Math.cos(lat)/mpp);
+  if(Number.isFinite(z)) map.setZoom(Math.max(0,Math.min(16,z)))
+}
+function syncScaleFromMap(){
+  if(!map)return;
+  const d=dims(), fw=$('frame').getBoundingClientRect().width||800;
+  const lat=map.getCenter().lat*Math.PI/180;
+  const mapMpp=156543.03392804097*Math.cos(lat)/Math.pow(2,map.getZoom());
+  const scale=mapMpp*fw*1000/d.w;
+  if(Number.isFinite(scale)){
+    // round sensibly while keeping direct manual editing possible
+    const step=scale>=100000?1000:scale>=10000?100:10;
+    $('scale').value=Math.max(1000,Math.round(scale/step)*step);
+  }
+}
 function frameRect(){const f=$('frame').getBoundingClientRect(),m=$('map').getBoundingClientRect();return{l:f.left-m.left,t:f.top-m.top,r:f.right-m.left,b:f.bottom-m.top,w:f.width,h:f.height}}
 function frameBounds(){const r=frameRect(),nw=map.unproject([r.l,r.t]),se=map.unproject([r.r,r.b]);return{west:nw.lng,north:nw.lat,east:se.lng,south:se.lat}}
 function lonX(lon,z){return(lon+180)/360*Math.pow(2,z)}function latY(lat,z){const rad=lat*Math.PI/180;return(1-Math.asinh(Math.tan(rad))/Math.PI)/2*Math.pow(2,z)}
@@ -201,9 +218,77 @@ async function generate(){
   }
 }
 function exportSvg(){if(!last){status('Genera prima le contour.','error');return}const d=dims(),pen=Math.max(.01,n('pen',.05)),idxN=Math.max(1,Math.round(n('indexEvery',5)));let minor='',major='';const sx=d.w/(last.r.w-1),sy=d.h/(last.r.h-1);const esc=v=>Number(v).toFixed(3).replace(/\.0+$/,'').replace(/(\.\d*?)0+$/,'$1');for(const p of last.paths){let q=p.points[0],s=`M ${esc(d.m+q.x*sx)} ${esc(d.m+q.y*sy)}`;for(let i=1;i<p.points.length;i++){q=p.points[i];s+=` L ${esc(d.m+q.x*sx)} ${esc(d.m+q.y*sy)}`}if(p.index)major+=`<path d="${s}"/>\n`;else minor+=`<path d="${s}"/>\n`}const txt=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${d.pageW}mm" height="${d.pageH}mm" viewBox="0 0 ${d.pageW} ${d.pageH}">\n<g id="minor-contours" fill="none" stroke="#000" stroke-width="${pen}" stroke-linecap="round" stroke-linejoin="round">${minor}</g>\n<g id="index-contours" fill="none" stroke="#000" stroke-width="${pen*1.8}" stroke-linecap="round" stroke-linejoin="round">${major}</g>\n</svg>`;const blob=new Blob([txt],{type:'image/svg+xml'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=`contours_${n('spacing',50)}m_1-${Math.round(n('scale',250000))}.svg`;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000);status(`SVG esportato · ${(blob.size/1024/1024).toFixed(2)} MB`,'ok')}
-async function search(){const q=$('search').value.trim();if(!q)return;const box=$('searchResults');box.style.display='block';box.innerHTML='<div class="result">Ricerca…</div>';try{const r=await fetch('https://photon.komoot.io/api/?limit=6&lang=it&q='+encodeURIComponent(q));if(!r.ok)throw new Error('HTTP '+r.status);const j=await r.json();box.innerHTML='';if(!j.features?.length){box.innerHTML='<div class="result">Nessun risultato</div>';return}for(const f of j.features){const [lon,lat]=f.geometry.coordinates,p=f.properties||{},name=[p.name,p.city,p.state,p.country].filter(Boolean).join(', '),e=document.createElement('div');e.className='result';e.textContent=name||`${lat.toFixed(4)}, ${lon.toFixed(4)}`;e.onclick=()=>{map.easeTo({center:[lon,lat],duration:700});box.style.display='none';$('lat').value=lat.toFixed(6);$('lon').value=lon.toFixed(6)};box.appendChild(e)}}catch(e){box.innerHTML='<div class="result">Ricerca non disponibile: usa lat/lon.</div>'}}
-function init(){if(!window.maplibregl){status('MapLibre non caricato.','error');return}map=new maplibregl.Map({container:'map',center:[n('lon',13.63),n('lat',42.46)],zoom:9,dragRotate:false,style:{version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'bg',type:'background',paint:{'background-color':'#e8e8e4'}},{id:'osm',type:'raster',source:'osm',paint:{'raster-opacity':.88,'raster-saturation':-.45}}]}});map.scrollZoom.disable();map.doubleClickZoom.disable();map.boxZoom.disable();map.keyboard.disable();map.touchZoomRotate.disableRotation();map.on('load',()=>{layout();status('Pronto. Posiziona l’area e premi “Genera contour”.','ok')});map.on('moveend',()=>{generationToken++;stopWorker();$('lat').value=map.getCenter().lat.toFixed(6);$('lon').value=map.getCenter().lng.toFixed(6);syncZoom();last=null;$('contourOverlay').innerHTML=''});
- $('searchBtn').onclick=search;$('search').addEventListener('keydown',e=>{if(e.key==='Enter')search()});$('goCoords').onclick=()=>map.easeTo({center:[n('lon'),n('lat')],duration:500});$('generate').onclick=generate;$('exportSvg').onclick=exportSvg;$('showMap').onchange=()=>map.setLayoutProperty('osm','visibility',$('showMap').checked?'visible':'none');$('showContours').onchange=()=>{$('contourOverlay').style.display=$('showContours').checked?'block':'none'};['paper','orientation','margin','scale'].forEach(id=>$(id).addEventListener('change',()=>{generationToken++;stopWorker();layout();last=null;$('contourOverlay').innerHTML=''}));$('scale').addEventListener('input',()=>{clearTimeout(window.__st);window.__st=setTimeout(()=>{generationToken++;stopWorker();syncZoom();last=null;$('contourOverlay').innerHTML=''},250)});window.addEventListener('resize',layout)}
+async function search(){
+  const q=$('search').value.trim(); if(!q)return;
+  const box=$('searchResults');
+  box.style.display='block';
+  box.innerHTML='<div class="result">Ricerca…</div>';
+  status('Cerco località…');
+
+  let results=[];
+  try{
+    const u='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=7&addressdetails=1&q='+encodeURIComponent(q);
+    const r=await fetch(u,{headers:{'Accept':'application/json'}});
+    if(r.ok){
+      const j=await r.json();
+      results=(j||[]).map(x=>({
+        lon:Number(x.lon),lat:Number(x.lat),
+        label:x.display_name||q
+      })).filter(x=>Number.isFinite(x.lon)&&Number.isFinite(x.lat));
+    }
+  }catch(_){}
+
+  if(!results.length){
+    try{
+      const u='https://photon.komoot.io/api/?limit=7&lang=it&q='+encodeURIComponent(q);
+      const r=await fetch(u,{headers:{'Accept':'application/json'}});
+      if(r.ok){
+        const j=await r.json();
+        results=(j.features||[]).map(f=>{
+          const [lon,lat]=f.geometry.coordinates,p=f.properties||{};
+          return {
+            lon:Number(lon),lat:Number(lat),
+            label:[p.name,p.city,p.state,p.country].filter(Boolean).join(', ')||q
+          };
+        }).filter(x=>Number.isFinite(x.lon)&&Number.isFinite(x.lat));
+      }
+    }catch(_){}
+  }
+
+  box.innerHTML='';
+  if(!results.length){
+    box.innerHTML='<div class="result">Nessun risultato. Puoi usare latitudine/longitudine.</div>';
+    status('Ricerca località non disponibile; usa lat/lon.','error');
+    return;
+  }
+
+  for(const item of results){
+    const e=document.createElement('div');
+    e.className='result';
+    e.textContent=item.label;
+    e.onclick=()=>{
+      map.easeTo({center:[item.lon,item.lat],duration:700});
+      $('lat').value=item.lat.toFixed(6);
+      $('lon').value=item.lon.toFixed(6);
+      $('search').value=item.label.split(',')[0];
+      box.style.display='none';
+      status('Località selezionata. Regola area/scala e genera le contour.','ok');
+    };
+    box.appendChild(e);
+  }
+  status(results.length+' risultati trovati.','ok');
+}
+function init(){if(!window.maplibregl){status('MapLibre non caricato.','error');return}map=new maplibregl.Map({container:'map',center:[n('lon',13.63),n('lat',42.46)],zoom:9,dragRotate:false,style:{version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'bg',type:'background',paint:{'background-color':'#e8e8e4'}},{id:'osm',type:'raster',source:'osm',paint:{'raster-opacity':.88,'raster-saturation':-.45}}]}});map.scrollZoom.enable();map.doubleClickZoom.enable();map.boxZoom.enable();map.keyboard.enable();map.dragPan.enable();map.touchZoomRotate.enable();map.touchZoomRotate.disableRotation();map.on('load',()=>{layout();status('Pronto. Posiziona l’area e premi “Genera contour”.','ok')});map.on('moveend',()=>{
+  generationToken++;stopWorker();
+  $('lat').value=map.getCenter().lat.toFixed(6);
+  $('lon').value=map.getCenter().lng.toFixed(6);
+  last=null;$('contourOverlay').innerHTML=''
+});
+map.on('zoomend',()=>{
+  syncScaleFromMap();
+  last=null;$('contourOverlay').innerHTML='';
+});
+ $('searchBtn').onclick=search;$('search').addEventListener('keydown',e=>{if(e.key==='Enter')search()});$('goCoords').onclick=()=>map.easeTo({center:[n('lon'),n('lat')],duration:500});$('generate').onclick=generate;$('exportSvg').onclick=exportSvg;$('showMap').onchange=()=>map.setLayoutProperty('osm','visibility',$('showMap').checked?'visible':'none');$('showContours').onchange=()=>{$('contourOverlay').style.display=$('showContours').checked?'block':'none'};['paper','orientation','margin'].forEach(id=>$(id).addEventListener('change',()=>{generationToken++;stopWorker();layout();last=null;$('contourOverlay').innerHTML=''}));$('scale').addEventListener('input',()=>{clearTimeout(window.__st);window.__st=setTimeout(()=>{generationToken++;stopWorker();syncZoom();last=null;$('contourOverlay').innerHTML=''},300)});window.addEventListener('resize',layout)}
 init();
 })();
 
