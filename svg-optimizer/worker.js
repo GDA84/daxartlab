@@ -143,6 +143,7 @@ function parseSvg(text, filename, fileBytes) {
   };
 
   return {
+    rawText:text,
     paths,
     page:{viewBox:vb,widthMm,heightMm,unitMm,scaleX,scaleY},
     originalStats,
@@ -153,6 +154,33 @@ function parseSvg(text, filename, fileBytes) {
 
 function optimizeModel(model, opts) {
   const o = normalizeOptions(opts, model.page);
+
+  // TRUE LOSSLESS: never rebuild geometry. This preserves QGIS groups,
+  // clipPaths, nested transforms, styles and any path commands we don't parse.
+  if (o.mode === 'lossless') {
+    postMessage({type:'progress', stage:'lossless', message:'Pulizia lossless: preservo integralmente la geometria QGIS…'});
+    const svgText = losslessMinifySvg(model.rawText);
+    const outputBytes = new TextEncoder().encode(svgText).length;
+    const travelUnits = travelLength(model.paths);
+    return {
+      svgText,
+      preview:model.originalPreview,
+      stats:{
+        paths:model.originalStats.paths,
+        points:model.originalStats.points,
+        drawMm:model.originalStats.drawMm,
+        travelMm:travelUnits*model.page.unitMm,
+        penLifts:model.originalStats.penLifts,
+        outputBytes,
+        removedShort:0,
+        removedDuplicates:0,
+        reduction:model.originalStats.fileBytes>0 ? 1-outputBytes/model.originalStats.fileBytes : 0,
+        trueLossless:true
+      },
+      options:o
+    };
+  }
+
   postMessage({type:'progress', stage:'clean', message:'Pulizia geometrie…'});
 
   let work = model.paths.map(p => ({points:p.points.map(q=>({x:q.x,y:q.y})), closed:p.closed, style:p.style}));
@@ -200,6 +228,15 @@ function optimizeModel(model, opts) {
   for(const p of work){points+=p.points.length;drawUnits+=polyLength(p.points);}
   const travelUnits = travelLength(work);
 
+  // Fail closed instead of emitting an accidentally empty/corrupt SVG.
+  if (!work.length) {
+    throw new Error('Ottimizzazione annullata: il risultato non contiene più alcun path. Riduci i filtri geometrici.');
+  }
+  const optimizedDrawMm = drawUnits*model.page.unitMm;
+  if (o.minPathMm===0 && model.originalStats.drawMm>0 && optimizedDrawMm < model.originalStats.drawMm*0.35) {
+    throw new Error('Ottimizzazione annullata: verrebbe eliminato oltre il 65% della geometria. Usa Lossless o riduci la semplificazione.');
+  }
+
   postMessage({type:'progress', stage:'serialize', message:'Creo SVG ottimizzato…'});
   const svgText = serializeSvg(work, model.page, o);
   const outputBytes = new TextEncoder().encode(svgText).length;
@@ -225,6 +262,7 @@ function optimizeModel(model, opts) {
 
 function normalizeOptions(opts, page) {
   return {
+    mode: opts.mode || 'safe',
     simplifyMm: Math.max(0, Number(opts.simplifyMm)||0),
     minPathMm: Math.max(0, Number(opts.minPathMm)||0),
     joinMm: Math.max(0, Number(opts.joinMm)||0),
@@ -238,6 +276,18 @@ function normalizeOptions(opts, page) {
     preserveStyles: opts.preserveStyles === true,
     page
   };
+}
+
+function losslessMinifySvg(text) {
+  // Conservative only: does NOT rewrite path data, transforms, styles, defs or clipPaths.
+  let s = String(text);
+  s = s.replace(/<!--[\s\S]*?-->/g, '');
+  s = s.replace(/<metadata\b[\s\S]*?<\/metadata\s*>/gi, '');
+  s = s.replace(/<sodipodi:namedview\b[\s\S]*?<\/sodipodi:namedview\s*>/gi, '');
+  s = s.replace(/>\s+</g, '><');
+  s = s.replace(/[\t\r\n]+/g, ' ');
+  s = s.replace(/ {2,}/g, ' ');
+  return s.trim();
 }
 
 function serializeSvg(paths, page, o) {
