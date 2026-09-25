@@ -1,0 +1,340 @@
+'use strict';
+
+let MODEL = null;
+const MM_PER_UNIT = {mm:1, cm:10, in:25.4, pt:25.4/72, pc:25.4/6, px:25.4/96};
+
+self.onmessage = async (e) => {
+  const m = e.data || {};
+  try {
+    if (m.type === 'load') {
+      postMessage({type:'progress', stage:'load', message:'Leggo SVG…'});
+      const text = new TextDecoder('utf-8').decode(m.buffer);
+      MODEL = parseSvg(text, m.name || 'input.svg', m.size || text.length);
+      postMessage({type:'loaded', stats:MODEL.originalStats, page:MODEL.page, preview:MODEL.originalPreview, warnings:MODEL.warnings});
+    } else if (m.type === 'optimize') {
+      if (!MODEL) throw new Error('Carica prima un file SVG.');
+      const result = optimizeModel(MODEL, m.options || {});
+      postMessage({type:'optimized', ...result});
+    } else if (m.type === 'reset') {
+      MODEL = null;
+      postMessage({type:'reset'});
+    }
+  } catch (err) {
+    postMessage({type:'error', message:err && err.message ? err.message : String(err)});
+  }
+};
+
+function parseSvg(text, filename, fileBytes) {
+  const warnings = [];
+  const svgMatch = text.match(/<svg\b([^>]*)>/i);
+  if (!svgMatch) throw new Error('Il file non contiene un elemento <svg> valido.');
+  const rootAttrs = parseAttrs(svgMatch[1] || '');
+  const viewBox = parseViewBox(rootAttrs.viewBox || rootAttrs.viewbox);
+  const widthLen = parseLength(rootAttrs.width);
+  const heightLen = parseLength(rootAttrs.height);
+
+  let vb = viewBox;
+  if (!vb) {
+    const w = widthLen ? widthLen.value : 1000;
+    const h = heightLen ? heightLen.value : 1000;
+    vb = {x:0,y:0,w,h};
+    warnings.push('viewBox assente: ricostruito da width/height.');
+  }
+
+  let widthMm = lengthToMm(widthLen);
+  let heightMm = lengthToMm(heightLen);
+  if (!(widthMm > 0) || !(heightMm > 0)) {
+    widthMm = vb.w * 25.4/96;
+    heightMm = vb.h * 25.4/96;
+    warnings.push('Dimensioni fisiche non esplicite: assunti 96 dpi per convertire in mm.');
+  }
+
+  const scaleX = widthMm / vb.w;
+  const scaleY = heightMm / vb.h;
+  const unitMm = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+
+  postMessage({type:'progress', stage:'parse', message:'Estraggo geometrie…'});
+
+  const paths = [];
+  let unsupported = 0;
+  let pathTags = 0, polyTags = 0, lineTags = 0;
+  let originalPoints = 0, originalDrawMm = 0;
+  let match;
+
+  const pathRe = /<path\b([^>]*?)\/?\s*>/gi;
+  while ((match = pathRe.exec(text))) {
+    pathTags++;
+    const attrs = parseAttrs(match[1] || '');
+    const d = attrs.d;
+    if (!d) continue;
+    const style = extractStyle(attrs);
+    const parsed = parsePathD(d);
+    if (!parsed.supported) {
+      unsupported++;
+      continue;
+    }
+    for (const sp of parsed.subpaths) {
+      const pts = dedupeConsecutive(sp.points, 0);
+      if (pts.length < 2) continue;
+      const lenUnits = polyLength(pts);
+      originalPoints += pts.length;
+      originalDrawMm += lenUnits * unitMm;
+      paths.push({points:pts, closed:sp.closed, style});
+    }
+    if (pathTags % 1500 === 0) postMessage({type:'progress', stage:'parse', message:`Estraggo path… ${pathTags.toLocaleString('it-IT')}`});
+  }
+
+  const polyRe = /<polyline\b([^>]*?)\/?\s*>/gi;
+  while ((match = polyRe.exec(text))) {
+    polyTags++;
+    const attrs = parseAttrs(match[1] || '');
+    const pts = parsePointsAttr(attrs.points);
+    if (pts.length >= 2) {
+      const clean = dedupeConsecutive(pts,0);
+      originalPoints += clean.length;
+      originalDrawMm += polyLength(clean) * unitMm;
+      paths.push({points:clean, closed:false, style:extractStyle(attrs)});
+    }
+  }
+
+  const polygonRe = /<polygon\b([^>]*?)\/?\s*>/gi;
+  while ((match = polygonRe.exec(text))) {
+    const attrs = parseAttrs(match[1] || '');
+    const pts = parsePointsAttr(attrs.points);
+    if (pts.length >= 2) {
+      const clean = dedupeConsecutive(pts,0);
+      originalPoints += clean.length;
+      originalDrawMm += polyLength(clean) * unitMm;
+      paths.push({points:clean, closed:true, style:extractStyle(attrs)});
+    }
+  }
+
+  const lineRe = /<line\b([^>]*?)\/?\s*>/gi;
+  while ((match = lineRe.exec(text))) {
+    lineTags++;
+    const attrs = parseAttrs(match[1] || '');
+    const x1=Number(attrs.x1), y1=Number(attrs.y1), x2=Number(attrs.x2), y2=Number(attrs.y2);
+    if ([x1,y1,x2,y2].every(Number.isFinite)) {
+      const pts=[{x:x1,y:y1},{x:x2,y:y2}];
+      originalPoints += 2;
+      originalDrawMm += polyLength(pts)*unitMm;
+      paths.push({points:pts, closed:false, style:extractStyle(attrs)});
+    }
+  }
+
+  if (!paths.length) throw new Error('Non ho trovato geometrie lineari compatibili. Questa V1 supporta path M/L/H/V/Z, polyline, polygon e line.');
+  if (unsupported) warnings.push(`${unsupported.toLocaleString('it-IT')} path con curve/archi non lineari sono stati ignorati in questa versione.`);
+
+  const originalPreview = makePreview(paths, vb, 70000);
+  const originalStats = {
+    filename,
+    fileBytes,
+    paths: paths.length,
+    points: originalPoints,
+    drawMm: originalDrawMm,
+    penLifts: Math.max(0, paths.length - 1),
+    unsupported,
+    pathTags,
+    polyTags,
+    lineTags
+  };
+
+  return {
+    paths,
+    page:{viewBox:vb,widthMm,heightMm,unitMm,scaleX,scaleY},
+    originalStats,
+    originalPreview,
+    warnings
+  };
+}
+
+function optimizeModel(model, opts) {
+  const o = normalizeOptions(opts, model.page);
+  postMessage({type:'progress', stage:'clean', message:'Pulizia geometrie…'});
+
+  let work = model.paths.map(p => ({points:p.points.map(q=>({x:q.x,y:q.y})), closed:p.closed, style:p.style}));
+  const tolUnits = o.simplifyMm / model.page.unitMm;
+  const minUnits = o.minPathMm / model.page.unitMm;
+  const joinUnits = o.joinMm / model.page.unitMm;
+  const dedupeUnits = Math.max(0.0000001, o.dedupeMm / model.page.unitMm);
+
+  let removedShort = 0;
+  let removedDuplicates = 0;
+
+  for (let i=0;i<work.length;i++) {
+    let pts = dedupeConsecutive(work[i].points, dedupeUnits);
+    if (tolUnits > 0 && pts.length > 2) pts = rdp(pts, tolUnits);
+    work[i].points = pts;
+  }
+
+  work = work.filter(p => {
+    if (p.points.length < 2) {removedShort++; return false;}
+    if (minUnits > 0 && polyLength(p.points) < minUnits) {removedShort++; return false;}
+    return true;
+  });
+
+  if (o.removeDuplicates) {
+    const seen = new Set();
+    const q = Math.max(1e-9, o.quantMm / model.page.unitMm);
+    work = work.filter(p => {
+      const k = canonicalPathKey(p.points, q, p.closed);
+      if (seen.has(k)) {removedDuplicates++; return false;}
+      seen.add(k); return true;
+    });
+  }
+
+  if (joinUnits > 0 && work.length > 1) {
+    postMessage({type:'progress', stage:'join', message:'Unisco estremità vicine…'});
+    work = joinPaths(work, joinUnits);
+  }
+
+  if (o.optimizeTravel && work.length > 1) {
+    postMessage({type:'progress', stage:'order', message:'Ottimizzo ordine di plotting…'});
+    work = orderPaths(work);
+  }
+
+  let points=0, drawUnits=0;
+  for(const p of work){points+=p.points.length;drawUnits+=polyLength(p.points);}
+  const travelUnits = travelLength(work);
+
+  postMessage({type:'progress', stage:'serialize', message:'Creo SVG ottimizzato…'});
+  const svgText = serializeSvg(work, model.page, o);
+  const outputBytes = new TextEncoder().encode(svgText).length;
+  const preview = makePreview(work, model.page.viewBox, 70000);
+
+  return {
+    svgText,
+    preview,
+    stats:{
+      paths:work.length,
+      points,
+      drawMm:drawUnits*model.page.unitMm,
+      travelMm:travelUnits*model.page.unitMm,
+      penLifts:Math.max(0,work.length-1),
+      outputBytes,
+      removedShort,
+      removedDuplicates,
+      reduction:model.originalStats.fileBytes>0 ? 1-outputBytes/model.originalStats.fileBytes : 0
+    },
+    options:o
+  };
+}
+
+function normalizeOptions(opts, page) {
+  return {
+    simplifyMm: Math.max(0, Number(opts.simplifyMm)||0),
+    minPathMm: Math.max(0, Number(opts.minPathMm)||0),
+    joinMm: Math.max(0, Number(opts.joinMm)||0),
+    dedupeMm: Math.max(0, Number(opts.dedupeMm)||0.001),
+    quantMm: Math.max(0.0001, Number(opts.quantMm)||0.005),
+    precision: clamp(Math.round(Number(opts.precision)||3),0,6),
+    optimizeTravel: opts.optimizeTravel !== false,
+    removeDuplicates: opts.removeDuplicates !== false,
+    consolidate: opts.consolidate !== false,
+    strokeMm: Math.max(0.01, Number(opts.strokeMm)||0.05),
+    preserveStyles: opts.preserveStyles === true,
+    page
+  };
+}
+
+function serializeSvg(paths, page, o) {
+  const vb=page.viewBox;
+  const fmt=v=>formatNumber(v,o.precision);
+  const dParts=[];
+  for(const p of paths){
+    const pts=p.points; if(!pts.length) continue;
+    let d=`M${fmt(pts[0].x)} ${fmt(pts[0].y)}`;
+    for(let i=1;i<pts.length;i++) d+=`L${fmt(pts[i].x)} ${fmt(pts[i].y)}`;
+    if(p.closed) d+='Z';
+    dParts.push(d);
+  }
+  const header=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${formatNumber(page.widthMm,3)}mm" height="${formatNumber(page.heightMm,3)}mm" viewBox="${fmt(vb.x)} ${fmt(vb.y)} ${fmt(vb.w)} ${fmt(vb.h)}">\n`;
+  const desc=`<desc>DaxART SVG Plotter Optimizer · centerline output · geometry preserved within chosen tolerances</desc>\n`;
+  if(o.consolidate){
+    return header+desc+`<path d="${dParts.join('')}" fill="none" stroke="#000" stroke-width="${formatNumber(o.strokeMm/page.unitMm,o.precision)}" stroke-linecap="round" stroke-linejoin="round"/>\n</svg>`;
+  }
+  const body=dParts.map(d=>`<path d="${d}" fill="none" stroke="#000" stroke-width="${formatNumber(o.strokeMm/page.unitMm,o.precision)}"/>`).join('\n');
+  return header+desc+body+'\n</svg>';
+}
+
+function makePreview(paths, vb, budget) {
+  let total=0; for(const p of paths) total+=p.points.length;
+  const stride=Math.max(1,Math.ceil(total/budget));
+  const lines=[]; let counter=0;
+  for(const p of paths){
+    const arr=[];
+    for(let i=0;i<p.points.length;i++){
+      if((counter++ % stride)===0 || i===0 || i===p.points.length-1) arr.push([p.points[i].x,p.points[i].y]);
+    }
+    if(arr.length>=2) lines.push(arr);
+    if(lines.length>18000) break;
+  }
+  return {viewBox:vb,lines,totalPoints:total,sampled:stride>1};
+}
+
+function parseAttrs(s) {
+  const out={};
+  const re=/([:\w.-]+)\s*=\s*("([^"]*)"|'([^']*)')/g;
+  let m; while((m=re.exec(s))) out[m[1]]=m[3]!==undefined?m[3]:m[4];
+  return out;
+}
+function parseLength(v){if(!v)return null;const m=String(v).trim().match(/^([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*([a-zA-Z%]*)$/);if(!m)return null;return{value:Number(m[1]),unit:(m[2]||'px').toLowerCase()}}
+function lengthToMm(l){if(!l||!Number.isFinite(l.value))return NaN;return l.value*(MM_PER_UNIT[l.unit]||MM_PER_UNIT.px)}
+function parseViewBox(v){if(!v)return null;const a=String(v).trim().split(/[\s,]+/).map(Number);if(a.length!==4||!a.every(Number.isFinite)||a[2]===0||a[3]===0)return null;return{x:a[0],y:a[1],w:a[2],h:a[3]}}
+function extractStyle(attrs){return {stroke:attrs.stroke||null,strokeWidth:attrs['stroke-width']||null,style:attrs.style||null}}
+function parsePointsAttr(s){if(!s)return[];const nums=String(s).trim().split(/[\s,]+/).map(Number).filter(Number.isFinite);const out=[];for(let i=0;i+1<nums.length;i+=2)out.push({x:nums[i],y:nums[i+1]});return out}
+
+function parsePathD(d) {
+  const tokens=String(d).match(/[a-zA-Z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];
+  const subpaths=[]; let pts=[],closed=false,i=0,cmd=null,cx=0,cy=0,sx=0,sy=0,supported=true;
+  const flush=()=>{if(pts.length){subpaths.push({points:pts,closed});pts=[];closed=false}};
+  const num=()=>Number(tokens[i++]);
+  while(i<tokens.length){
+    if(/[a-zA-Z]/.test(tokens[i])) cmd=tokens[i++];
+    if(!cmd) {supported=false;break;}
+    const rel=cmd===cmd.toLowerCase(), C=cmd.toUpperCase();
+    if(C==='M'){
+      if(i+1>=tokens.length){supported=false;break;}
+      let x=num(),y=num(); if(rel){x+=cx;y+=cy;} flush(); cx=x;cy=y;sx=x;sy=y;pts=[{x,y}]; cmd=rel?'l':'L';
+    } else if(C==='L'){
+      if(i+1>=tokens.length){supported=false;break;} let x=num(),y=num();if(rel){x+=cx;y+=cy;}cx=x;cy=y;pts.push({x,y});
+    } else if(C==='H'){
+      if(i>=tokens.length){supported=false;break;}let x=num();if(rel)x+=cx;cx=x;pts.push({x:cx,y:cy});
+    } else if(C==='V'){
+      if(i>=tokens.length){supported=false;break;}let y=num();if(rel)y+=cy;cy=y;pts.push({x:cx,y:cy});
+    } else if(C==='Z'){
+      closed=true;cx=sx;cy=sy;flush();cmd=null;
+    } else {
+      supported=false;break;
+    }
+  }
+  flush(); return {supported,subpaths};
+}
+
+function dedupeConsecutive(pts,tol){if(pts.length<2)return pts.slice();const out=[pts[0]];for(let i=1;i<pts.length;i++){const a=out[out.length-1],b=pts[i];if(Math.hypot(b.x-a.x,b.y-a.y)>tol)out.push(b)}return out}
+function polyLength(pts){let s=0;for(let i=1;i<pts.length;i++)s+=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);return s}
+function rdp(pts,eps){if(pts.length<3||eps<=0)return pts.slice();const sq=eps*eps,keep=new Uint8Array(pts.length);keep[0]=keep[pts.length-1]=1;const stack=[[0,pts.length-1]];while(stack.length){const [a,b]=stack.pop();let md=sq,idx=-1;for(let i=a+1;i<b;i++){const d=segDist2(pts[i],pts[a],pts[b]);if(d>md){md=d;idx=i}}if(idx>=0){keep[idx]=1;stack.push([a,idx],[idx,b])}}const out=[];for(let i=0;i<pts.length;i++)if(keep[i])out.push(pts[i]);return out}
+function segDist2(p,a,b){let x=a.x,y=a.y,dx=b.x-x,dy=b.y-y;if(dx||dy){const t=((p.x-x)*dx+(p.y-y)*dy)/(dx*dx+dy*dy);if(t>1){x=b.x;y=b.y}else if(t>0){x+=dx*t;y+=dy*t}}dx=p.x-x;dy=p.y-y;return dx*dx+dy*dy}
+function canonicalPathKey(pts,q,closed){const enc=a=>a.map(p=>Math.round(p.x/q)+','+Math.round(p.y/q)).join(';');const f=enc(pts),r=enc([...pts].reverse());return(closed?'c|':'o|')+(f<r?f:r)}
+function joinPaths(paths,tol){
+  const alive=paths.map(()=>true),cell=tol>0?tol:1,grid=new Map();
+  const key=(p)=>`${Math.floor(p.x/cell)},${Math.floor(p.y/cell)}`;
+  const add=(idx,end,p)=>{const k=key(p);let a=grid.get(k);if(!a){a=[];grid.set(k,a)}a.push({idx,end,p})};
+  paths.forEach((p,i)=>{if(!p.closed){add(i,0,p.points[0]);add(i,1,p.points[p.points.length-1]);}});
+  function nearest(pt,self){const gx=Math.floor(pt.x/cell),gy=Math.floor(pt.y/cell);let best=null,bd=tol;for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){const a=grid.get(`${gx+dx},${gy+dy}`)||[];for(const c of a){if(c.idx===self||!alive[c.idx])continue;const d=Math.hypot(pt.x-c.p.x,pt.y-c.p.y);if(d<=bd){bd=d;best=c}}}return best}
+  for(let i=0;i<paths.length;i++){
+    if(!alive[i]||paths[i].closed)continue;let changed=true;
+    while(changed){changed=false;const p=paths[i],tail=p.points[p.points.length-1],m=nearest(tail,i);if(m){const q=paths[m.idx];if(m.end===1)q.points.reverse();p.points.push(...q.points.slice(1));alive[m.idx]=false;changed=true;}}
+    changed=true;while(changed){changed=false;const p=paths[i],head=p.points[0],m=nearest(head,i);if(m){const q=paths[m.idx];if(m.end===0)q.points.reverse();p.points.unshift(...q.points.slice(0,-1));alive[m.idx]=false;changed=true;}}
+  }
+  return paths.filter((_,i)=>alive[i]);
+}
+function orderPaths(paths){
+  if(paths.length>5000){return paths.slice().sort((a,b)=>{const ay=a.points[0].y,by=b.points[0].y;if(Math.abs(ay-by)>50)return ay-by;return a.points[0].x-b.points[0].x});}
+  const remaining=paths.slice(),out=[];let cur={x:0,y:0};
+  while(remaining.length){let bi=0,bd=Infinity,rev=false;for(let i=0;i<remaining.length;i++){const p=remaining[i],a=p.points[0],b=p.points[p.points.length-1],da=(a.x-cur.x)**2+(a.y-cur.y)**2,db=(b.x-cur.x)**2+(b.y-cur.y)**2;if(da<bd){bd=da;bi=i;rev=false}if(!p.closed&&db<bd){bd=db;bi=i;rev=true}}const p=remaining.splice(bi,1)[0];if(rev)p.points.reverse();out.push(p);cur=p.points[p.points.length-1];}
+  return out;
+}
+function travelLength(paths){let s=0,prev=null;for(const p of paths){if(prev)s+=Math.hypot(p.points[0].x-prev.x,p.points[0].y-prev.y);prev=p.points[p.points.length-1]}return s}
+function formatNumber(v,p){let s=Number(v).toFixed(p);if(p>0)s=s.replace(/\.?0+$/,'');return s==='-0'?'0':s}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
