@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>DaxART SVG Plotter Optimizer</title>
+<style>
+:root{--bg:#0a0d0f;--panel:#111518;--panel2:#171c20;--line:#2a3238;--text:#f4f6f7;--muted:#9ba7af;--accent:#c8ff29;--danger:#ff7979;--good:#c8ff82}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}button,input,select{font:inherit}
+#app{min-height:100vh;display:grid;grid-template-columns:390px 1fr}.side{background:var(--panel);border-right:1px solid var(--line);padding:18px;overflow:auto;max-height:100vh}.main{padding:18px;overflow:auto}
+h1{font-size:20px;margin:0 0 4px}.sub{font-size:12px;color:var(--muted);margin-bottom:16px}.section{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}.section h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}label{font-size:11px;color:#ced5d9}.hint{font-size:10px;color:var(--muted);line-height:1.4}
+input,select{width:100%;padding:9px 10px;background:#0c1012;border:1px solid #343d44;border-radius:8px;color:var(--text)}button{border:1px solid #3a444b;background:#22292e;color:#fff;border-radius:8px;padding:10px 12px;font-weight:700;cursor:pointer}.primary{background:var(--accent);border-color:var(--accent);color:#111}.wide{width:100%}.ghost{background:#151a1e}.toggle{display:flex;gap:7px;align-items:center;margin:7px 0;font-size:11px}.toggle input{width:auto}
+.drop{border:1.5px dashed #4b5962;border-radius:12px;padding:22px 14px;text-align:center;background:#0c1012;cursor:pointer;transition:.15s}.drop.drag{border-color:var(--accent);background:#11180d}.drop b{display:block;margin-bottom:5px}.drop span{font-size:11px;color:var(--muted)}#file{display:none}
+.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.presets button{font-size:11px;padding:8px 5px}.presets button.active{border-color:var(--accent);color:var(--accent)}
+.status{margin-top:10px;padding:9px;border:1px solid #2a3238;background:#0c1012;border-radius:8px;font-size:11px;line-height:1.45;color:var(--muted);white-space:pre-wrap;min-height:40px}.status.ok{color:var(--good);border-color:#40531a}.status.error{color:#ffd0d0;border-color:#683636;background:#1a1010}
+.cards{display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:12px}.card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}.card h3{font-size:13px;margin:0 0 10px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.metric{background:#0c1012;border:1px solid #293037;border-radius:8px;padding:8px}.metric b{display:block;font-size:15px}.metric span{font-size:10px;color:var(--muted)}
+.previewWrap{margin-top:12px;background:#eef0ea;border-radius:12px;border:1px solid #3b4348;overflow:hidden;position:relative;min-height:520px}.previewHeader{position:absolute;left:10px;top:10px;z-index:2;display:flex;gap:6px}.previewHeader button{padding:7px 9px;font-size:11px;background:rgba(15,18,20,.88)}canvas{display:block;width:100%;height:520px;background:#f8f8f3}.reduction{font-size:28px;font-weight:800;color:var(--accent);margin-top:4px}.warn{font-size:10px;color:#ffd08c;line-height:1.4;margin-top:8px}
+@media(max-width:900px){#app{grid-template-columns:1fr}.side{max-height:none;border-right:0;border-bottom:1px solid var(--line)}.cards{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="app">
+<aside class="side">
+<h1>DaxART SVG Plotter Optimizer</h1>
+<div class="sub">Alleggerisci SVG di contour per pen plotter senza alterare più del necessario la geometria visibile.</div>
+
+<div id="drop" class="drop"><b>Trascina qui il tuo SVG</b><span>oppure clicca per scegliere un file · elaborazione 100% locale nel browser</span></div>
+<input id="file" type="file" accept=".svg,image/svg+xml"/>
+
+<div class="section">
+<h2>Preset</h2>
+<div class="presets"><button data-preset="lossless" class="active">Lossless</button><button data-preset="safe">Plotter-safe</button><button data-preset="strong">Strong</button></div>
+<div class="hint" style="margin-top:7px">Lossless rimuove solo ridondanze e riordina i path. Plotter-safe usa tolleranze inferiori alla larghezza della penna.</div>
+</div>
+
+<div class="section">
+<h2>Geometria</h2>
+<div class="row"><div class="field"><label>Penna (mm)</label><input id="stroke" type="number" min="0.01" step="0.01" value="0.05"></div><div class="field"><label>Semplifica (mm)</label><input id="simplify" type="number" min="0" step="0.005" value="0"></div></div>
+<div class="row"><div class="field"><label>Elimina path &lt; (mm)</label><input id="minPath" type="number" min="0" step="0.1" value="0"></div><div class="field"><label>Unisci estremità entro (mm)</label><input id="join" type="number" min="0" step="0.01" value="0"></div></div>
+<div class="row"><div class="field"><label>Rimuovi punti entro (mm)</label><input id="dedupe" type="number" min="0" step="0.001" value="0.001"></div><div class="field"><label>Precisione decimali</label><input id="precision" type="number" min="0" max="6" value="3"></div></div>
+<label class="toggle"><input id="removeDuplicates" type="checkbox" checked> Rimuovi path duplicati esatti</label>
+<label class="toggle"><input id="optimizeTravel" type="checkbox" checked> Riordina path per ridurre pen-up travel</label>
+<label class="toggle"><input id="consolidate" type="checkbox" checked> Consolida in un unico path SVG</label>
+</div>
+
+<div class="section">
+<h2>Azioni</h2>
+<button id="optimize" class="primary wide" disabled>Ottimizza SVG</button>
+<button id="download" class="wide ghost" style="margin-top:7px" disabled>Scarica SVG ottimizzato</button>
+<div id="status" class="status">Carica un SVG per iniziare.</div>
+<div id="warning" class="warn"></div>
+</div>
+</aside>
+
+<main class="main">
+<div class="cards">
+<div class="card"><h3>Originale</h3><div class="metrics"><div class="metric"><b id="oSize">—</b><span>dimensione</span></div><div class="metric"><b id="oPaths">—</b><span>path</span></div><div class="metric"><b id="oPoints">—</b><span>punti</span></div><div class="metric"><b id="oDraw">—</b><span>m disegno</span></div><div class="metric"><b id="oLifts">—</b><span>pen lifts</span></div><div class="metric"><b id="oUnsupported">—</b><span>non lineari</span></div></div></div>
+<div class="card"><h3>Ottimizzato</h3><div class="metrics"><div class="metric"><b id="nSize">—</b><span>dimensione</span></div><div class="metric"><b id="nPaths">—</b><span>path</span></div><div class="metric"><b id="nPoints">—</b><span>punti</span></div><div class="metric"><b id="nDraw">—</b><span>m disegno</span></div><div class="metric"><b id="nTravel">—</b><span>m pen-up</span></div><div class="metric"><b id="nLifts">—</b><span>pen lifts</span></div></div><div id="reduction" class="reduction">—</div><div class="hint">riduzione dimensione file</div></div>
+</div>
+<div class="previewWrap"><div class="previewHeader"><button id="showOriginal">Originale</button><button id="showOptimized">Ottimizzato</button></div><canvas id="preview"></canvas></div>
+</main>
+</div>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id);let worker=null,originalPreview=null,optimizedPreview=null,optimizedSvg=null,currentFile=null,loaded=false;
+function setStatus(msg,k=''){const e=$('status');e.textContent=msg;e.className='status'+(k?' '+k:'')}
+function fmtBytes(b){if(!(b>=0))return'—';if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(2)+' MB'}
+function fmtM(mm){if(!(mm>=0))return'—';return(mm/1000).toLocaleString('it-IT',{maximumFractionDigits:1})+' m'}
+function pct(v){return Number.isFinite(v)?Math.max(0,v*100).toFixed(1)+'%':'—'}
+function ensureWorker(){if(worker)return;worker=new Worker('./worker.js?v=1');worker.onmessage=e=>{const m=e.data||{};if(m.type==='progress'){setStatus(m.message);return}if(m.type==='error'){setStatus(m.message,'error');$('optimize').disabled=!loaded;return}if(m.type==='loaded'){loaded=true;originalPreview=m.preview;optimizedPreview=null;optimizedSvg=null;fillOriginal(m.stats);$('warning').textContent=(m.warnings||[]).join(' ');$('optimize').disabled=false;$('download').disabled=true;setStatus('SVG analizzato. Scegli un preset o regola i parametri, poi premi Ottimizza SVG.','ok');drawPreview(originalPreview);return}if(m.type==='optimized'){optimizedSvg=m.svgText;optimizedPreview=m.preview;fillOptimized(m.stats);$('download').disabled=false;$('optimize').disabled=false;setStatus('Ottimizzazione completata. Il file è pronto per il download.','ok');drawPreview(optimizedPreview);}};worker.onerror=e=>setStatus('Errore worker: '+(e.message||'sconosciuto'),'error')}
+async function loadFile(file){if(!file)return;ensureWorker();currentFile=file;loaded=false;$('optimize').disabled=true;$('download').disabled=true;optimizedSvg=null;setStatus('Carico '+file.name+'…');const buf=await file.arrayBuffer();worker.postMessage({type:'load',buffer:buf,name:file.name,size:file.size},[buf])}
+function fillOriginal(s){$('oSize').textContent=fmtBytes(s.fileBytes);$('oPaths').textContent=s.paths.toLocaleString('it-IT');$('oPoints').textContent=s.points.toLocaleString('it-IT');$('oDraw').textContent=fmtM(s.drawMm);$('oLifts').textContent=s.penLifts.toLocaleString('it-IT');$('oUnsupported').textContent=s.unsupported.toLocaleString('it-IT')}
+function fillOptimized(s){$('nSize').textContent=fmtBytes(s.outputBytes);$('nPaths').textContent=s.paths.toLocaleString('it-IT');$('nPoints').textContent=s.points.toLocaleString('it-IT');$('nDraw').textContent=fmtM(s.drawMm);$('nTravel').textContent=fmtM(s.travelMm);$('nLifts').textContent=s.penLifts.toLocaleString('it-IT');$('reduction').textContent=pct(s.reduction)}
+function options(){return{strokeMm:+$('stroke').value,simplifyMm:+$('simplify').value,minPathMm:+$('minPath').value,joinMm:+$('join').value,dedupeMm:+$('dedupe').value,precision:+$('precision').value,removeDuplicates:$('removeDuplicates').checked,optimizeTravel:$('optimizeTravel').checked,consolidate:$('consolidate').checked,quantMm:Math.max(.001,+$('dedupe').value||.001)}}
+function optimize(){if(!loaded)return;ensureWorker();$('optimize').disabled=true;$('download').disabled=true;setStatus('Avvio ottimizzazione…');worker.postMessage({type:'optimize',options:options()})}
+function download(){if(!optimizedSvg||!currentFile)return;const blob=new Blob([optimizedSvg],{type:'image/svg+xml'}),u=URL.createObjectURL(blob),a=document.createElement('a');const base=currentFile.name.replace(/\.svg$/i,'');a.href=u;a.download=base+'_PLOTTER.svg';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+function preset(name){document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));const pen=Math.max(.01,+$('stroke').value||.05);if(name==='lossless'){$('simplify').value=0;$('minPath').value=0;$('join').value=0;$('dedupe').value=.001;$('precision').value=3}else if(name==='safe'){$('simplify').value=(pen*.5).toFixed(3);$('minPath').value=.5;$('join').value=Math.min(.05,pen).toFixed(3);$('dedupe').value=.002;$('precision').value=3}else{$('simplify').value=(pen*1.5).toFixed(3);$('minPath').value=1.5;$('join').value=.1;$('dedupe').value=.005;$('precision').value=2}}
+function drawPreview(p){const c=$('preview'),r=c.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1);c.width=Math.max(10,Math.floor(r.width*dpr));c.height=Math.max(10,Math.floor(520*dpr));const ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,r.width,520);ctx.fillStyle='#f8f8f3';ctx.fillRect(0,0,r.width,520);if(!p||!p.lines?.length)return;const vb=p.viewBox,pad=18,s=Math.min((r.width-2*pad)/vb.w,(520-2*pad)/vb.h),ox=(r.width-vb.w*s)/2-vb.x*s,oy=(520-vb.h*s)/2-vb.y*s;ctx.strokeStyle='#111';ctx.lineWidth=.55;ctx.beginPath();for(const line of p.lines){if(line.length<2)continue;ctx.moveTo(line[0][0]*s+ox,line[0][1]*s+oy);for(let i=1;i<line.length;i++)ctx.lineTo(line[i][0]*s+ox,line[i][1]*s+oy)}ctx.stroke();if(p.sampled){ctx.fillStyle='rgba(0,0,0,.55)';ctx.font='11px system-ui';ctx.fillText('Anteprima alleggerita',18,500)}}
+const drop=$('drop'),file=$('file');drop.onclick=()=>file.click();file.onchange=()=>loadFile(file.files[0]);['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>loadFile(e.dataTransfer.files[0]));document.querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>preset(b.dataset.preset));$('optimize').onclick=optimize;$('download').onclick=download;$('showOriginal').onclick=()=>drawPreview(originalPreview);$('showOptimized').onclick=()=>drawPreview(optimizedPreview||originalPreview);window.addEventListener('resize',()=>drawPreview(optimizedPreview||originalPreview));preset('lossless');
+})();
+</script>
+</body>
+</html>
