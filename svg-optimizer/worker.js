@@ -197,7 +197,11 @@ function optimizeModel(model, opts) {
     };
   }
 
-  postMessage({type:'progress', stage:'clean', message:'Pulizia geometrie…'});
+  if (o.preserveDocument) {
+    return optimizeDocumentInPlace(model, o);
+  }
+
+  postMessage({type:'progress', stage:'clean', message:'Pulizia geometrie legacy…'});
 
   let work = model.paths.map(p => ({points:p.points.map(q=>({x:q.x,y:q.y})), closed:p.closed, style:p.style}));
   const tolUnits = o.simplifyMm / model.page.unitMm;
@@ -285,6 +289,7 @@ function optimizeModel(model, opts) {
 function normalizeOptions(opts, page) {
   return {
     mode: opts.mode || 'safe',
+    preserveDocument: opts.preserveDocument !== false,
     simplifyMm: Math.max(0, Number(opts.simplifyMm)||0),
     minPathMm: Math.max(0, Number(opts.minPathMm)||0),
     joinMm: Math.max(0, Number(opts.joinMm)||0),
@@ -300,6 +305,155 @@ function normalizeOptions(opts, page) {
     preserveStyles: opts.preserveStyles === true,
     page
   };
+}
+
+
+function optimizeDocumentInPlace(model, o) {
+  postMessage({type:'progress', stage:'inplace', message:'Ottimizzo i path mantenendo canvas, gruppi e clip originali…'});
+
+  const text = model.rawText;
+  const tolUnits = o.simplifyMm / model.page.unitMm;
+  const minUnits = o.minPathMm / model.page.unitMm;
+  const dedupeUnits = Math.max(0, o.dedupeMm / model.page.unitMm);
+
+  const stack = [{tag:'__root__', matrix:identityMatrix(), hidden:false}];
+  const tagRe = /<\s*(\/?)\s*([a-zA-Z][\w:.-]*)([^>]*?)(\/?)\s*>/g;
+  let out='', lastIndex=0, match;
+  let keptPaths=0, points=0, drawUnits=0, unsupported=0, removedShort=0;
+  const statPaths=[];
+
+  while ((match = tagRe.exec(text))) {
+    out += text.slice(lastIndex, match.index);
+    lastIndex = tagRe.lastIndex;
+
+    const fullTag = match[0];
+    const closing = !!match[1];
+    const rawName = match[2];
+    const tag = rawName.includes(':') ? rawName.split(':').pop().toLowerCase() : rawName.toLowerCase();
+    const attrText = match[3] || '';
+    const selfClosing = !!match[4] || /\/\s*>$/.test(fullTag);
+
+    if (closing) {
+      out += fullTag;
+      for (let k=stack.length-1;k>0;k--) {
+        const entry=stack[k]; stack.pop();
+        if(entry.tag===tag) break;
+      }
+      continue;
+    }
+
+    const attrs = parseAttrs(attrText);
+    const parentEntry = stack[stack.length-1];
+    const localMatrix = attrs.transform ? parseTransform(attrs.transform) : identityMatrix();
+    const matrix = multiplyMatrix(parentEntry.matrix, localMatrix);
+    const styleText = attrs.style || '';
+    const hiddenHere = parentEntry.hidden ||
+      ['defs','clippath','mask','symbol','pattern','marker'].includes(tag) ||
+      String(attrs.display||'').toLowerCase()==='none' ||
+      String(attrs.visibility||'').toLowerCase()==='hidden' ||
+      /(?:^|;)\s*display\s*:\s*none\s*(?:;|$)/i.test(styleText) ||
+      /(?:^|;)\s*visibility\s*:\s*hidden\s*(?:;|$)/i.test(styleText);
+
+    let emittedTag = fullTag;
+
+    if (!hiddenHere && tag === 'path' && attrs.d) {
+      const parsed = parsePathD(attrs.d);
+      if (!parsed.supported) {
+        unsupported++;
+        emittedTag = fullTag;
+      } else {
+        const inv = invertMatrix(matrix);
+        if (inv) {
+          const rebuilt=[];
+          for (const sp of parsed.subpaths) {
+            let pagePts = sp.points.map(pt=>applyMatrix(matrix,pt));
+            pagePts = dedupeConsecutive(pagePts,dedupeUnits);
+            if (tolUnits>0 && pagePts.length>2) pagePts = rdp(pagePts,tolUnits);
+            const len = polyLength(pagePts);
+            if (pagePts.length<2 || (minUnits>0 && len<minUnits)) {removedShort++;continue;}
+            const localPts = pagePts.map(pt=>applyMatrix(inv,pt));
+            rebuilt.push(serializeLinearSubpath(localPts,sp.closed,o.precision));
+            keptPaths++; points+=pagePts.length; drawUnits+=len; statPaths.push({points:pagePts});
+          }
+          emittedTag = rebuilt.length ? replaceSvgAttribute(fullTag,'d',rebuilt.join('')) : '';
+        }
+      }
+    } else if (!hiddenHere && (tag === 'polyline' || tag === 'polygon') && attrs.points) {
+      const inv=invertMatrix(matrix);
+      const local=parsePointsAttr(attrs.points);
+      if(inv && local.length>=2){
+        let pagePts=local.map(pt=>applyMatrix(matrix,pt));
+        pagePts=dedupeConsecutive(pagePts,dedupeUnits);
+        if(tolUnits>0 && pagePts.length>2) pagePts=rdp(pagePts,tolUnits);
+        const len=polyLength(pagePts);
+        if(pagePts.length<2 || (minUnits>0 && len<minUnits)){emittedTag='';removedShort++;}
+        else{
+          const back=pagePts.map(pt=>applyMatrix(inv,pt));
+          emittedTag=replaceSvgAttribute(fullTag,'points',back.map(p=>formatNumber(p.x,o.precision)+','+formatNumber(p.y,o.precision)).join(' '));
+          keptPaths++;points+=pagePts.length;drawUnits+=len;statPaths.push({points:pagePts});
+        }
+      }
+    } else if (!hiddenHere && tag === 'line') {
+      const x1=Number(attrs.x1),y1=Number(attrs.y1),x2=Number(attrs.x2),y2=Number(attrs.y2);
+      if([x1,y1,x2,y2].every(Number.isFinite)){
+        const pagePts=[applyMatrix(matrix,{x:x1,y:y1}),applyMatrix(matrix,{x:x2,y:y2})];
+        const len=polyLength(pagePts);
+        if(minUnits>0 && len<minUnits){emittedTag='';removedShort++;}
+        else{keptPaths++;points+=2;drawUnits+=len;statPaths.push({points:pagePts});}
+      }
+    }
+
+    out += emittedTag;
+
+    if (!selfClosing && ['svg','g','a','symbol','defs','clippath','mask','pattern','marker'].includes(tag)) {
+      stack.push({tag,matrix,hidden:hiddenHere});
+    }
+  }
+  out += text.slice(lastIndex);
+
+  const svgText = losslessMinifySvg(out);
+  const outputBytes = new TextEncoder().encode(svgText).length;
+  const travelUnits = travelLength(statPaths);
+  const visiblePathCount = keptPaths + unsupported;
+  if (!visiblePathCount) throw new Error('Ottimizzazione annullata: non risultano geometrie visibili.');
+
+  return {
+    svgText,
+    preview:model.originalPreview,
+    stats:{
+      paths:visiblePathCount,
+      points,
+      drawMm:drawUnits*model.page.unitMm,
+      travelMm:travelUnits*model.page.unitMm,
+      penLifts:Math.max(0,visiblePathCount-1),
+      outputBytes,
+      removedShort,
+      removedDuplicates:0,
+      unsupportedPreserved:unsupported,
+      reduction:model.originalStats.fileBytes>0 ? 1-outputBytes/model.originalStats.fileBytes : 0,
+      preservedCanvas:true
+    },
+    options:o
+  };
+}
+
+function serializeLinearSubpath(pts,closed,precision){
+  if(!pts.length)return '';
+  let d='M'+formatNumber(pts[0].x,precision)+' '+formatNumber(pts[0].y,precision);
+  for(let i=1;i<pts.length;i++) d+='L'+formatNumber(pts[i].x,precision)+' '+formatNumber(pts[i].y,precision);
+  if(closed)d+='Z';
+  return d;
+}
+
+function replaceSvgAttribute(tag,name,value){
+  const re=new RegExp('(\\b'+name+'\\s*=\\s*)(["\\'])([\\s\\S]*?)\\2','i');
+  return re.test(tag) ? tag.replace(re,(m,prefix,quote)=>prefix+quote+value+quote) : tag;
+}
+
+function invertMatrix(m){
+  const [a,b,c,d,e,f]=m,det=a*d-b*c;
+  if(Math.abs(det)<1e-15)return null;
+  return [d/det,-b/det,-c/det,a/det,(c*f-d*e)/det,(b*e-a*f)/det];
 }
 
 function losslessMinifySvg(text) {
