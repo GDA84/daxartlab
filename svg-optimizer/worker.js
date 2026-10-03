@@ -262,7 +262,6 @@ function optimizeModel(model, opts) {
     postMessage({type:'progress', stage:'lossless', message:'Pulizia lossless: preservo integralmente la geometria QGIS…'});
     const svgText = losslessMinifySvg(model.rawText);
     const outputBytes = new TextEncoder().encode(svgText).length;
-    const travelUnits = travelLength(model.paths);
     return {
       svgText,
       preview:model.originalPreview,
@@ -270,7 +269,7 @@ function optimizeModel(model, opts) {
         paths:model.originalStats.paths,
         points:model.originalStats.points,
         drawMm:model.originalStats.drawMm,
-        travelMm:travelUnits*model.page.unitMm,
+        travelMm:NaN,
         penLifts:model.originalStats.penLifts,
         outputBytes,
         removedShort:0,
@@ -394,18 +393,58 @@ function normalizeOptions(opts, page) {
 
 
 function optimizeDocumentInPlace(model, o) {
-  postMessage({type:'progress', stage:'inplace', message:'Ottimizzo i path mantenendo canvas, gruppi e clip originali…'});
+  postMessage({type:'progress', stage:'inplace', message:'Ottimizzo in streaming mantenendo canvas, gruppi, trasformazioni e clip originali…'});
 
   const text = model.rawText;
   const tolUnits = o.simplifyMm / model.page.unitMm;
   const minUnits = o.minPathMm / model.page.unitMm;
   const dedupeUnits = Math.max(0, o.dedupeMm / model.page.unitMm);
+  const previewStride = Math.max(1, model.previewStride || 1);
+  const previewLines = [];
 
   const stack = [{tag:'__root__', matrix:identityMatrix(), hidden:false}];
   const tagRe = /<\s*(\/?)\s*([a-zA-Z][\w:.-]*)([^>]*?)(\/?)\s*>/g;
   let out='', lastIndex=0, match;
   let keptPaths=0, points=0, drawUnits=0, unsupported=0, removedShort=0;
-  const statPaths=[];
+  let prevEnd=null, travelUnits=0, processedTags=0;
+
+  const acceptPageSubpath = (sp, matrix, inv, rebuilt) => {
+    if (!sp.points || sp.points.length < 2) return;
+
+    let pagePts = new Array(sp.points.length);
+    for(let j=0;j<sp.points.length;j++) pagePts[j]=applyMatrix(matrix,sp.points[j]);
+
+    pagePts = dedupeConsecutive(pagePts,dedupeUnits);
+    if (tolUnits>0 && pagePts.length>2) pagePts = rdp(pagePts,tolUnits);
+
+    const len = polyLength(pagePts);
+    if (pagePts.length<2 || (minUnits>0 && len<minUnits)) {
+      removedShort++;
+      return;
+    }
+
+    const localPts = new Array(pagePts.length);
+    for(let j=0;j<pagePts.length;j++) localPts[j]=applyMatrix(inv,pagePts[j]);
+    rebuilt.push(serializeLinearSubpath(localPts,sp.closed,o.precision));
+
+    if(prevEnd){
+      const first=pagePts[0];
+      travelUnits += Math.hypot(first.x-prevEnd.x,first.y-prevEnd.y);
+    }
+    prevEnd=pagePts[pagePts.length-1];
+
+    keptPaths++;
+    points += pagePts.length;
+    drawUnits += len;
+
+    if(previewLines.length<18000){
+      const sample=[];
+      for(let j=0;j<pagePts.length;j+=previewStride) sample.push([pagePts[j].x,pagePts[j].y]);
+      const last=pagePts[pagePts.length-1];
+      if(!sample.length || sample[sample.length-1][0]!==last.x || sample[sample.length-1][1]!==last.y) sample.push([last.x,last.y]);
+      if(sample.length>=2) previewLines.push(sample);
+    }
+  };
 
   while ((match = tagRe.exec(text))) {
     out += text.slice(lastIndex, match.index);
@@ -442,49 +481,39 @@ function optimizeDocumentInPlace(model, o) {
     let emittedTag = fullTag;
 
     if (!hiddenHere && tag === 'path' && attrs.d) {
-      const parsed = parsePathD(attrs.d);
-      if (!parsed.supported) {
+      processedTags++;
+      if(processedTags%100===0) postMessage({type:'progress', stage:'inplace', message:'Ottimizzo path… '+processedTags.toLocaleString('it-IT')});
+
+      if (containsUnsupportedPathCommands(attrs.d)) {
+        // Preserve curves/arcs byte-for-byte rather than risk altering them.
         unsupported++;
-        emittedTag = fullTag;
       } else {
         const inv = invertMatrix(matrix);
         if (inv) {
           const rebuilt=[];
-          for (const sp of parsed.subpaths) {
-            let pagePts = sp.points.map(pt=>applyMatrix(matrix,pt));
-            pagePts = dedupeConsecutive(pagePts,dedupeUnits);
-            if (tolUnits>0 && pagePts.length>2) pagePts = rdp(pagePts,tolUnits);
-            const len = polyLength(pagePts);
-            if (pagePts.length<2 || (minUnits>0 && len<minUnits)) {removedShort++;continue;}
-            const localPts = pagePts.map(pt=>applyMatrix(inv,pt));
-            rebuilt.push(serializeLinearSubpath(localPts,sp.closed,o.precision));
-            keptPaths++; points+=pagePts.length; drawUnits+=len; statPaths.push({points:pagePts});
-          }
-          emittedTag = rebuilt.length ? replaceSvgAttribute(fullTag,'d',rebuilt.join('')) : '';
-        }
+          const ok = walkLinearPath(attrs.d, sp=>acceptPageSubpath(sp,matrix,inv,rebuilt));
+          if(ok) emittedTag = rebuilt.length ? replaceSvgAttribute(fullTag,'d',rebuilt.join('')) : '';
+          else unsupported++;
+        } else unsupported++;
       }
     } else if (!hiddenHere && (tag === 'polyline' || tag === 'polygon') && attrs.points) {
       const inv=invertMatrix(matrix);
       const local=parsePointsAttr(attrs.points);
       if(inv && local.length>=2){
-        let pagePts=local.map(pt=>applyMatrix(matrix,pt));
-        pagePts=dedupeConsecutive(pagePts,dedupeUnits);
-        if(tolUnits>0 && pagePts.length>2) pagePts=rdp(pagePts,tolUnits);
-        const len=polyLength(pagePts);
-        if(pagePts.length<2 || (minUnits>0 && len<minUnits)){emittedTag='';removedShort++;}
-        else{
-          const back=pagePts.map(pt=>applyMatrix(inv,pt));
-          emittedTag=replaceSvgAttribute(fullTag,'points',back.map(p=>formatNumber(p.x,o.precision)+','+formatNumber(p.y,o.precision)).join(' '));
-          keptPaths++;points+=pagePts.length;drawUnits+=len;statPaths.push({points:pagePts});
-        }
+        const rebuilt=[];
+        acceptPageSubpath({points:local,closed:tag==='polygon'},matrix,inv,rebuilt);
+        emittedTag=rebuilt.length ? replaceSvgAttribute(fullTag,'points',linearPathToPointsAttr(rebuilt[0])) : '';
       }
     } else if (!hiddenHere && tag === 'line') {
       const x1=Number(attrs.x1),y1=Number(attrs.y1),x2=Number(attrs.x2),y2=Number(attrs.y2);
       if([x1,y1,x2,y2].every(Number.isFinite)){
-        const pagePts=[applyMatrix(matrix,{x:x1,y:y1}),applyMatrix(matrix,{x:x2,y:y2})];
-        const len=polyLength(pagePts);
-        if(minUnits>0 && len<minUnits){emittedTag='';removedShort++;}
-        else{keptPaths++;points+=2;drawUnits+=len;statPaths.push({points:pagePts});}
+        const inv=invertMatrix(matrix);
+        if(inv){
+          const rebuilt=[];
+          acceptPageSubpath({points:[{x:x1,y:y1},{x:x2,y:y2}],closed:false},matrix,inv,rebuilt);
+          // Lines are tiny; preserve their original representation unless explicitly filtered.
+          if(!rebuilt.length) emittedTag='';
+        }
       }
     }
 
@@ -498,13 +527,17 @@ function optimizeDocumentInPlace(model, o) {
 
   const svgText = losslessMinifySvg(out);
   const outputBytes = new TextEncoder().encode(svgText).length;
-  const travelUnits = travelLength(statPaths);
   const visiblePathCount = keptPaths + unsupported;
   if (!visiblePathCount) throw new Error('Ottimizzazione annullata: non risultano geometrie visibili.');
 
   return {
     svgText,
-    preview:makePreview(statPaths, model.page.viewBox, 70000),
+    preview:{
+      viewBox:model.page.viewBox,
+      lines:previewLines,
+      totalPoints:points,
+      sampled:previewStride>1
+    },
     stats:{
       paths:visiblePathCount,
       points,
@@ -520,6 +553,13 @@ function optimizeDocumentInPlace(model, o) {
     },
     options:o
   };
+}
+
+function linearPathToPointsAttr(d){
+  const nums=String(d).match(/[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g)||[];
+  const out=[];
+  for(let i=0;i+1<nums.length;i+=2) out.push(nums[i]+','+nums[i+1]);
+  return out.join(' ');
 }
 
 function serializeLinearSubpath(pts,closed,precision){
@@ -544,6 +584,7 @@ function invertMatrix(m){
 function losslessMinifySvg(text) {
   // Conservative only: does NOT rewrite path data, transforms, styles, defs or clipPaths.
   let s = String(text);
+  s = s.replace(/<\?xml\b([^>]*?)encoding\s*=\s*(["'])[^"']*\2([^>]*?)\?>/i, '<?xml$1encoding="UTF-8"$3?>');
   s = s.replace(/<!--[\s\S]*?-->/g, '');
   s = s.replace(/<metadata\b[\s\S]*?<\/metadata\s*>/gi, '');
   s = s.replace(/<sodipodi:namedview\b[\s\S]*?<\/sodipodi:namedview\s*>/gi, '');
