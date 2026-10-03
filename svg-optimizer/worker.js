@@ -214,10 +214,11 @@ function optimizeModel(model, opts) {
     work[i].points = pts;
   }
 
-  // QGIS often relies on clipPaths: the underlying contour paths can extend far
-  // outside the page. Because optimized output is flattened, clip physically to
-  // the original root viewBox so the plotter never sees an oversized drawing.
-  work = clipWorkToViewBox(work, model.page.viewBox);
+  // Keep the whole optimized drawing. If requested, scale it uniformly and
+  // recenter it inside the original root viewBox instead of cropping it.
+  if (o.fitToPage) {
+    work = fitWorkToViewBox(work, model.page.viewBox, o.fitMarginMm / model.page.unitMm);
+  }
 
   work = work.filter(p => {
     if (p.points.length < 2) {removedShort++; return false;}
@@ -293,6 +294,8 @@ function normalizeOptions(opts, page) {
     optimizeTravel: opts.optimizeTravel !== false,
     removeDuplicates: opts.removeDuplicates !== false,
     consolidate: opts.consolidate !== false,
+    fitToPage: opts.fitToPage !== false,
+    fitMarginMm: Math.max(0, Number.isFinite(Number(opts.fitMarginMm)) ? Number(opts.fitMarginMm) : 0),
     strokeMm: Math.max(0.01, Number(opts.strokeMm)||0.05),
     preserveStyles: opts.preserveStyles === true,
     page
@@ -335,51 +338,54 @@ function serializeSvg(paths, page, o) {
   return header+desc+body+'\n</svg>';
 }
 
-function clipWorkToViewBox(paths, vb) {
-  const rect={xmin:Math.min(vb.x,vb.x+vb.w),xmax:Math.max(vb.x,vb.x+vb.w),ymin:Math.min(vb.y,vb.y+vb.h),ymax:Math.max(vb.y,vb.y+vb.h)};
-  const out=[];
-  for(const p of paths){
-    const pieces=clipPolyline(p.points,rect);
-    for(const pts of pieces){
-      if(pts.length>=2) out.push({points:pts,closed:false,style:p.style});
+function fitWorkToViewBox(paths, vb, marginUnits=0) {
+  if (!paths.length) return paths;
+  const b = geometryBounds(paths);
+  if (!b) return paths;
+
+  const left = Math.min(vb.x, vb.x + vb.w) + marginUnits;
+  const right = Math.max(vb.x, vb.x + vb.w) - marginUnits;
+  const top = Math.min(vb.y, vb.y + vb.h) + marginUnits;
+  const bottom = Math.max(vb.y, vb.y + vb.h) - marginUnits;
+  const targetW = Math.max(1e-12, right - left);
+  const targetH = Math.max(1e-12, bottom - top);
+  const srcW = Math.max(1e-12, b.maxX - b.minX);
+  const srcH = Math.max(1e-12, b.maxY - b.minY);
+
+  // Never enlarge an already fitting drawing; only shrink when necessary.
+  const fits = b.minX >= left && b.maxX <= right && b.minY >= top && b.maxY <= bottom;
+  if (fits) return paths;
+
+  const scale = Math.min(targetW / srcW, targetH / srcH);
+  const srcCx = (b.minX + b.maxX) / 2;
+  const srcCy = (b.minY + b.maxY) / 2;
+  const dstCx = (left + right) / 2;
+  const dstCy = (top + bottom) / 2;
+
+  return paths.map(p => ({
+    ...p,
+    points: p.points.map(pt => ({
+      x: dstCx + (pt.x - srcCx) * scale,
+      y: dstCy + (pt.y - srcCy) * scale
+    }))
+  }));
+}
+
+function geometryBounds(paths) {
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity,found=false;
+  for (const p of paths) {
+    for (const q of p.points) {
+      if (!Number.isFinite(q.x) || !Number.isFinite(q.y)) continue;
+      found=true;
+      if (q.x<minX) minX=q.x;
+      if (q.x>maxX) maxX=q.x;
+      if (q.y<minY) minY=q.y;
+      if (q.y>maxY) maxY=q.y;
     }
   }
-  return out;
+  return found ? {minX,minY,maxX,maxY} : null;
 }
-function clipPolyline(points,r){
-  const out=[]; let current=[];
-  for(let i=1;i<points.length;i++){
-    const c=clipSegmentRect(points[i-1],points[i],r);
-    if(!c){
-      if(current.length>=2) out.push(current);
-      current=[];
-      continue;
-    }
-    const [a,b]=c;
-    if(!current.length){current=[a,b];}
-    else {
-      const q=current[current.length-1];
-      if(Math.hypot(q.x-a.x,q.y-a.y)<1e-7) current.push(b);
-      else {if(current.length>=2) out.push(current);current=[a,b];}
-    }
-  }
-  if(current.length>=2) out.push(current);
-  return out;
-}
-function clipSegmentRect(a,b,r){
-  let t0=0,t1=1,dx=b.x-a.x,dy=b.y-a.y;
-  const tests=[[-dx,a.x-r.xmin],[dx,r.xmax-a.x],[-dy,a.y-r.ymin],[dy,r.ymax-a.y]];
-  for(const [p,q] of tests){
-    if(Math.abs(p)<1e-15){if(q<0)return null;continue;}
-    const t=q/p;
-    if(p<0){if(t>t1)return null;if(t>t0)t0=t;}
-    else {if(t<t0)return null;if(t<t1)t1=t;}
-  }
-  return [
-    {x:a.x+t0*dx,y:a.y+t0*dy},
-    {x:a.x+t1*dx,y:a.y+t1*dy}
-  ];
-}
+
 function escapeXmlAttr(v){
   return String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
