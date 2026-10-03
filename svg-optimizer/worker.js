@@ -14,7 +14,10 @@ self.onmessage = async (e) => {
     } else if (m.type === 'optimize') {
       if (!MODEL) throw new Error('Carica prima un file SVG.');
       const result = optimizeModel(MODEL, m.options || {});
-      postMessage({type:'optimized', ...result});
+      const svgText = result.svgText || '';
+      delete result.svgText;
+      const encoded = new TextEncoder().encode(svgText);
+      postMessage({type:'optimized', ...result, svgBuffer:encoded.buffer}, [encoded.buffer]);
     } else if (m.type === 'reset') {
       MODEL = null;
       postMessage({type:'reset'});
@@ -419,7 +422,7 @@ function optimizeDocumentInPlace(model, o) {
 
   return {
     svgText,
-    preview:model.originalPreview,
+    preview:makePreview(statPaths, model.page.viewBox, 70000),
     stats:{
       paths:visiblePathCount,
       points,
