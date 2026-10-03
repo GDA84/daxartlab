@@ -446,7 +446,7 @@ function serializeLinearSubpath(pts,closed,precision){
 }
 
 function replaceSvgAttribute(tag,name,value){
-  const re=new RegExp('(\\b'+name+'\\s*=\\s*)(["\\'])([\\s\\S]*?)\\2','i');
+  const re=new RegExp("(\\b"+name+"\\s*=\\s*)([\\\"'])([\\s\\S]*?)\\2","i");
   return re.test(tag) ? tag.replace(re,(m,prefix,quote)=>prefix+quote+value+quote) : tag;
 }
 
