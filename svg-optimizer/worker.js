@@ -29,9 +29,13 @@ function parseSvg(text, filename, fileBytes) {
   const svgMatch = text.match(/<svg\b([^>]*)>/i);
   if (!svgMatch) throw new Error('Il file non contiene un elemento <svg> valido.');
   const rootAttrs = parseAttrs(svgMatch[1] || '');
-  const viewBox = parseViewBox(rootAttrs.viewBox || rootAttrs.viewbox);
-  const widthLen = parseLength(rootAttrs.width);
-  const heightLen = parseLength(rootAttrs.height);
+  const rootWidthAttr = rootAttrs.width || null;
+  const rootHeightAttr = rootAttrs.height || null;
+  const rootViewBoxAttr = rootAttrs.viewBox || rootAttrs.viewbox || null;
+  const rootPreserveAspectRatio = rootAttrs.preserveAspectRatio || rootAttrs.preserveaspectratio || null;
+  const viewBox = parseViewBox(rootViewBoxAttr);
+  const widthLen = parseLength(rootWidthAttr);
+  const heightLen = parseLength(rootHeightAttr);
 
   let vb = viewBox;
   if (!vb) {
@@ -61,7 +65,7 @@ function parseSvg(text, filename, fileBytes) {
   let originalPoints = 0, originalDrawMm = 0;
 
   // Streaming-ish tag walk: keeps inherited SVG group transforms without building a huge DOM.
-  const stack = [{tag:'__root__', matrix:identityMatrix()}];
+  const stack = [{tag:'__root__', matrix:identityMatrix(), hidden:false}];
   const tagRe = /<\s*(\/?)\s*([a-zA-Z][\w:.-]*)([^>]*?)(\/?)\s*>/g;
   let match;
   while ((match = tagRe.exec(text))) {
@@ -82,13 +86,22 @@ function parseSvg(text, filename, fileBytes) {
     }
 
     const attrs = parseAttrs(attrText);
-    const parentMatrix = stack[stack.length-1].matrix;
+    const parentEntry = stack[stack.length-1];
+    const parentMatrix = parentEntry.matrix;
     const localMatrix = attrs.transform ? parseTransform(attrs.transform) : identityMatrix();
     const matrix = multiplyMatrix(parentMatrix, localMatrix);
     if (attrs.transform) transformedTags++;
 
+    const styleText = attrs.style || '';
+    const hiddenHere = parentEntry.hidden ||
+      ['defs','clippath','mask','symbol','pattern','marker'].includes(tag) ||
+      String(attrs.display||'').toLowerCase()==='none' ||
+      String(attrs.visibility||'').toLowerCase()==='hidden' ||
+      /(?:^|;)\s*display\s*:\s*none\s*(?:;|$)/i.test(styleText) ||
+      /(?:^|;)\s*visibility\s*:\s*hidden\s*(?:;|$)/i.test(styleText);
+
     const addPath = (pts, closed, style) => {
-      if (pts.length < 2) return;
+      if (hiddenHere || pts.length < 2) return;
       const transformed = pts.map(pt => applyMatrix(matrix, pt));
       const clean = dedupeConsecutive(transformed,0);
       if (clean.length < 2) return;
@@ -118,8 +131,8 @@ function parseSvg(text, filename, fileBytes) {
     }
 
     // Only container elements need to stay on the transform stack.
-    if (!selfClosing && ['svg','g','a','symbol','defs','clipPath','clippath','mask'].includes(tag)) {
-      stack.push({tag,matrix});
+    if (!selfClosing && ['svg','g','a','symbol','defs','clippath','mask','pattern','marker'].includes(tag)) {
+      stack.push({tag,matrix,hidden:hiddenHere});
     }
   }
 
@@ -145,7 +158,10 @@ function parseSvg(text, filename, fileBytes) {
   return {
     rawText:text,
     paths,
-    page:{viewBox:vb,widthMm,heightMm,unitMm,scaleX,scaleY},
+    page:{
+      viewBox:vb,widthMm,heightMm,unitMm,scaleX,scaleY,
+      rootWidthAttr,rootHeightAttr,rootViewBoxAttr,rootPreserveAspectRatio
+    },
     originalStats,
     originalPreview,
     warnings
@@ -197,6 +213,11 @@ function optimizeModel(model, opts) {
     if (tolUnits > 0 && pts.length > 2) pts = rdp(pts, tolUnits);
     work[i].points = pts;
   }
+
+  // QGIS often relies on clipPaths: the underlying contour paths can extend far
+  // outside the page. Because optimized output is flattened, clip physically to
+  // the original root viewBox so the plotter never sees an oversized drawing.
+  work = clipWorkToViewBox(work, model.page.viewBox);
 
   work = work.filter(p => {
     if (p.points.length < 2) {removedShort++; return false;}
@@ -301,13 +322,66 @@ function serializeSvg(paths, page, o) {
     if(p.closed) d+='Z';
     dParts.push(d);
   }
-  const header=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${formatNumber(page.widthMm,3)}mm" height="${formatNumber(page.heightMm,3)}mm" viewBox="${fmt(vb.x)} ${fmt(vb.y)} ${fmt(vb.w)} ${fmt(vb.h)}">\n`;
+  const widthAttr = page.rootWidthAttr || (formatNumber(page.widthMm,3)+'mm');
+  const heightAttr = page.rootHeightAttr || (formatNumber(page.heightMm,3)+'mm');
+  const viewBoxAttr = page.rootViewBoxAttr || `${fmt(vb.x)} ${fmt(vb.y)} ${fmt(vb.w)} ${fmt(vb.h)}`;
+  const par = page.rootPreserveAspectRatio ? ` preserveAspectRatio="${escapeXmlAttr(page.rootPreserveAspectRatio)}"` : '';
+  const header=`<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${escapeXmlAttr(widthAttr)}" height="${escapeXmlAttr(heightAttr)}" viewBox="${escapeXmlAttr(viewBoxAttr)}"${par}>\n`;
   const desc=`<desc>DaxART SVG Plotter Optimizer · centerline output · geometry preserved within chosen tolerances</desc>\n`;
   if(o.consolidate){
     return header+desc+`<path d="${dParts.join('')}" fill="none" stroke="#000" stroke-width="${formatNumber(o.strokeMm/page.unitMm,o.precision)}" stroke-linecap="round" stroke-linejoin="round"/>\n</svg>`;
   }
   const body=dParts.map(d=>`<path d="${d}" fill="none" stroke="#000" stroke-width="${formatNumber(o.strokeMm/page.unitMm,o.precision)}"/>`).join('\n');
   return header+desc+body+'\n</svg>';
+}
+
+function clipWorkToViewBox(paths, vb) {
+  const rect={xmin:Math.min(vb.x,vb.x+vb.w),xmax:Math.max(vb.x,vb.x+vb.w),ymin:Math.min(vb.y,vb.y+vb.h),ymax:Math.max(vb.y,vb.y+vb.h)};
+  const out=[];
+  for(const p of paths){
+    const pieces=clipPolyline(p.points,rect);
+    for(const pts of pieces){
+      if(pts.length>=2) out.push({points:pts,closed:false,style:p.style});
+    }
+  }
+  return out;
+}
+function clipPolyline(points,r){
+  const out=[]; let current=[];
+  for(let i=1;i<points.length;i++){
+    const c=clipSegmentRect(points[i-1],points[i],r);
+    if(!c){
+      if(current.length>=2) out.push(current);
+      current=[];
+      continue;
+    }
+    const [a,b]=c;
+    if(!current.length){current=[a,b];}
+    else {
+      const q=current[current.length-1];
+      if(Math.hypot(q.x-a.x,q.y-a.y)<1e-7) current.push(b);
+      else {if(current.length>=2) out.push(current);current=[a,b];}
+    }
+  }
+  if(current.length>=2) out.push(current);
+  return out;
+}
+function clipSegmentRect(a,b,r){
+  let t0=0,t1=1,dx=b.x-a.x,dy=b.y-a.y;
+  const tests=[[-dx,a.x-r.xmin],[dx,r.xmax-a.x],[-dy,a.y-r.ymin],[dy,r.ymax-a.y]];
+  for(const [p,q] of tests){
+    if(Math.abs(p)<1e-15){if(q<0)return null;continue;}
+    const t=q/p;
+    if(p<0){if(t>t1)return null;if(t>t0)t0=t;}
+    else {if(t<t0)return null;if(t<t1)t1=t;}
+  }
+  return [
+    {x:a.x+t0*dx,y:a.y+t0*dy},
+    {x:a.x+t1*dx,y:a.y+t1*dy}
+  ];
+}
+function escapeXmlAttr(v){
+  return String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function makePreview(paths, vb, budget) {
