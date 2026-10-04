@@ -1,7 +1,7 @@
 'use strict';
 
 let MODEL = null;
-const BUILD = '3.0.0-stable';
+const BUILD = '3.0.1-stable';
 const MM_PER_UNIT = {mm:1, cm:10, in:25.4, pt:25.4/72, pc:25.4/6, px:25.4/96, q:0.25};
 
 self.onmessage = (e) => {
