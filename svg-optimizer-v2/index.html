@@ -19,7 +19,7 @@
   <aside class="panel">
     <h1>DaxART SVG Plotter Optimizer</h1>
     <div class="sub">Ottimizza contour SVG molto densi mantenendo invariati canvas, formato pagina, gruppi e trasformazioni.</div>
-    <div class="build">Stable build 3.0.0 · memory-safe path streaming</div>
+    <div class="build">Stable build 3.0.1 · memory-safe path streaming</div>
     <div id="drop" class="drop"><b>Trascina qui il tuo SVG</b><span>oppure clicca per scegliere un file · elaborazione locale</span></div>
     <input id="file" type="file" accept=".svg,image/svg+xml">
 
@@ -60,7 +60,7 @@
 </div>
 <script>
 (()=>{'use strict';
-const BUILD='3.0.0-stable';const $=id=>document.getElementById(id);
+const BUILD='3.0.1-stable';const $=id=>document.getElementById(id);
 let worker=null,currentFile=null,currentPreset='safe',loaded=false,page=null,originalPreview=null,optimizedPreview=null,optimizedBuffer=null,previewMode='original';
 function setStatus(msg,k=''){const e=$('status');e.textContent=msg;e.className='status'+(k?' '+k:'')}
 function fmtBytes(b){if(!(b>=0))return'—';if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(2)+' MB'}
