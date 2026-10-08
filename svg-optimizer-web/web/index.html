@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DaxART SVG Plotter Optimizer</title>
+<style>
+:root{--bg:#0a0d0f;--panel:#11161a;--panel2:#171d21;--line:#2a3339;--text:#f2f5f6;--muted:#96a3ab;--accent:#c9ff2d;--good:#baf36e;--bad:#ff8e8e;--paper:#fff}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}button,input{font:inherit}button{cursor:pointer}
+#app{min-height:100vh;display:grid;grid-template-columns:380px 1fr}.side{background:var(--panel);border-right:1px solid var(--line);padding:18px;overflow:auto;max-height:100vh}.main{padding:18px;min-width:0}
+h1{font-size:20px;margin:0 0 4px}.sub{font-size:12px;color:var(--muted);line-height:1.4}.local{display:inline-block;margin-top:8px;padding:4px 7px;border-radius:6px;background:#18220f;border:1px solid #40531b;color:#dfff9d;font-size:10px;font-weight:800}.section{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}.section h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}.drop{border:1.5px dashed #536169;border-radius:12px;padding:24px 14px;text-align:center;background:#0c1012;cursor:pointer}.drop.drag{border-color:var(--accent);background:#131b0d}.drop b{display:block;font-size:16px;margin-bottom:5px}.drop span{font-size:11px;color:var(--muted)}#file{display:none}.filename{font-size:11px;margin-top:8px;color:#dfe6e9;word-break:break-all}
+.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.presets button,.previewTabs button{border:1px solid #3a454c;background:#22292e;color:#fff;border-radius:8px;padding:9px 7px;font-weight:750}.presets button.active,.previewTabs button.active{border-color:var(--accent);color:var(--accent)}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}.field label{font-size:11px;color:#cad2d6}.field input{width:100%;padding:9px 10px;background:#0c1012;border:1px solid #354047;border-radius:8px;color:#fff}.hint{font-size:10px;line-height:1.45;color:var(--muted)}.lock{font-size:11px;line-height:1.45;padding:9px 10px;border:1px solid #40531b;border-radius:8px;background:#11180d;color:#dfff9d}
+button.action{width:100%;border:1px solid #3c474e;background:#20272c;color:#fff;border-radius:9px;padding:11px;font-weight:800}.action.primary{background:var(--accent);border-color:var(--accent);color:#111}.action:disabled{opacity:.45;cursor:not-allowed}.status{margin-top:9px;padding:9px;border:1px solid var(--line);background:#0c1012;border-radius:8px;font-size:11px;line-height:1.45;color:var(--muted);white-space:pre-wrap}.status.ok{border-color:#41551c;color:#dfff9d}.status.error{border-color:#6a3838;color:#ffd0d0;background:#1b1010}.progress{height:7px;border-radius:99px;background:#262e33;overflow:hidden;margin-top:8px}.progress>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}.warn{font-size:10px;color:#ffd18e;line-height:1.4;margin-top:8px}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:12px}.card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}.card h3{font-size:13px;margin:0 0 10px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.metric{background:#0c1012;border:1px solid #293137;border-radius:8px;padding:8px;min-width:0}.metric b{display:block;font-size:15px;overflow:hidden;text-overflow:ellipsis}.metric span{font-size:10px;color:var(--muted)}.reduction{font-size:28px;font-weight:900;color:var(--accent);margin-top:9px}.badge{display:inline-block;margin-left:5px;padding:3px 6px;border-radius:5px;background:#25311a;color:#dfff9d;font-size:9px;font-weight:900}.pageCard{margin-bottom:12px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}.pageCard strong{font-size:14px}.pageCard span{font-size:11px;color:var(--muted)}
+.previewWrap{margin-top:12px;border:1px solid var(--line);background:#171d21;border-radius:12px;overflow:hidden}.previewHeader{display:flex;gap:6px;align-items:center;padding:10px;border-bottom:1px solid var(--line);flex-wrap:wrap}.previewTabs{display:flex;gap:6px}.previewTabs button{padding:7px 9px;font-size:11px}.previewStage{height:650px;background:#d5d5d5;display:flex;align-items:center;justify-content:center;padding:28px;overflow:hidden}.previewStage img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 2px 8px rgba(0,0,0,.25);background:#fff}.emptyPreview{color:#6a6a6a;font-size:13px}.topNote{margin-left:auto;font-size:10px;color:var(--muted)}
+@media(max-width:950px){#app{grid-template-columns:1fr}.side{max-height:none;border-right:0;border-bottom:1px solid var(--line)}.cards{grid-template-columns:1fr}.previewStage{height:520px}.topNote{margin-left:0;width:100%}}
+</style>
+</head>
+<body>
+<div id="app">
+<aside class="side">
+  <h1>DaxART SVG Plotter Optimizer</h1>
+  <div class="sub">Web · motore Python server-side per contour map SVG molto dense.</div>
+  <div class="local">SERVER-SIDE · FILE TEMPORANEI AUTO-ELIMINATI</div>
+
+  <div class="section">
+    <div id="drop" class="drop"><b>Trascina qui il tuo SVG</b><span>oppure clicca per scegliere il file · fino a 200 MB</span></div>
+    <input id="file" type="file" accept=".svg,image/svg+xml">
+    <div id="filename" class="filename"></div>
+  </div>
+
+  <div class="section"><h2>Pagina</h2>
+    <div class="lock">🔒 <b>Canvas originale bloccato</b><br>width, height, viewBox/viewport, gruppi, transform e clip restano nella struttura originale.</div>
+    <div id="pageInfo" class="hint" style="margin-top:8px">Carica un SVG.</div>
+  </div>
+
+  <div class="section"><h2>Preset</h2>
+    <div class="presets"><button data-preset="lossless">Lossless</button><button data-preset="safe" class="active">Plotter-safe</button><button data-preset="strong">Strong</button></div>
+    <div class="hint" style="margin-top:7px">Plotter-safe è il punto di partenza consigliato. I path con Bézier/archi vengono preservati senza modifica.</div>
+  </div>
+
+  <div class="section"><h2>Geometria</h2>
+    <div class="row"><div class="field"><label>Penna (mm)</label><input id="pen" type="number" min="0.01" step="0.01" value="0.05"></div><div class="field"><label>Semplifica (mm)</label><input id="simplify" type="number" min="0" step="0.005" value="0.025"></div></div>
+    <div class="row"><div class="field"><label>Elimina sub-path &lt; (mm)</label><input id="minPath" type="number" min="0" step="0.1" value="0.5"></div><div class="field"><label>Rimuovi punti entro (mm)</label><input id="dedupe" type="number" min="0" step="0.001" value="0.002"></div></div>
+    <div class="field"><label>Precisione coordinate</label><input id="precision" type="number" min="0" max="8" step="1" value="3"></div>
+  </div>
+
+  <div class="section"><h2>Azioni</h2>
+    <button id="optimize" class="action primary" disabled>Ottimizza SVG</button>
+    <button id="download" class="action" style="margin-top:7px" disabled>Scarica SVG ottimizzato</button>
+    <button id="reset" class="action" style="margin-top:7px">Reset</button>
+    <div id="status" class="status">Carica un SVG per iniziare.</div>
+    <div class="progress"><i id="bar"></i></div>
+    <div id="warning" class="warn"></div>
+  </div>
+</aside>
+
+<main class="main">
+  <div id="pageCard" class="pageCard"><strong>Nessun SVG caricato</strong><span>Il formato fisico del foglio verrà rilevato automaticamente.</span></div>
+  <div class="cards">
+    <div class="card"><h3>Originale</h3><div class="metrics"><div class="metric"><b id="oSize">—</b><span>dimensione</span></div><div class="metric"><b id="oPaths">—</b><span>sub-path</span></div><div class="metric"><b id="oPoints">—</b><span>punti</span></div><div class="metric"><b id="oDraw">—</b><span>m disegno</span></div><div class="metric"><b id="oLifts">—</b><span>pen lifts</span></div><div class="metric"><b id="oUnsupported">—</b><span>path preservati</span></div></div></div>
+    <div class="card"><h3>Ottimizzato <span id="pageBadge" class="badge" style="display:none">PAGE OK</span></h3><div class="metrics"><div class="metric"><b id="nSize">—</b><span>dimensione</span></div><div class="metric"><b id="nPaths">—</b><span>sub-path</span></div><div class="metric"><b id="nPoints">—</b><span>punti</span></div><div class="metric"><b id="nDraw">—</b><span>m disegno</span></div><div class="metric"><b id="nTravel">—</b><span>m pen-up</span></div><div class="metric"><b id="nLifts">—</b><span>pen lifts</span></div></div><div id="reduction" class="reduction">—</div><div class="hint">riduzione dimensione file</div></div>
+  </div>
+  <div class="previewWrap">
+    <div class="previewHeader"><div class="previewTabs"><button id="showOriginal" class="active">Originale</button><button id="showOptimized">Ottimizzato</button></div><span class="topNote">Anteprima alleggerita separata · il download contiene l'SVG completo</span></div>
+    <div id="previewStage" class="previewStage"><div class="emptyPreview">L'anteprima comparirà qui.</div></div>
+  </div>
+</main>
+</div>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id);
+let token=null,currentFile=null,currentPreset='safe',originalPreviewUrl=null,optimizedPreviewUrl=null,downloadUrl=null,pollTimer=null;
+function fmtBytes(b){if(!(b>=0))return'—';if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';return(b/1048576).toFixed(2)+' MB'}
+function fmtM(mm){if(!Number.isFinite(mm))return'—';return(mm/1000).toLocaleString('it-IT',{maximumFractionDigits:1})+' m'}
+function pct(v){return Number.isFinite(v)?Math.max(0,v*100).toFixed(1)+'%':'—'}
+function setStatus(msg,k=''){const e=$('status');e.textContent=msg;e.className='status'+(k?' '+k:'')}
+function setProgress(v){$('bar').style.width=Math.max(0,Math.min(100,(Number(v)||0)*100))+'%'}
+function fillOriginal(s){$('oSize').textContent=fmtBytes(s.fileBytes);$('oPaths').textContent=(s.paths||0).toLocaleString('it-IT');$('oPoints').textContent=(s.points||0).toLocaleString('it-IT');$('oDraw').textContent=fmtM(s.drawMm);$('oLifts').textContent=(s.penLifts||0).toLocaleString('it-IT');$('oUnsupported').textContent=(s.unsupported||0).toLocaleString('it-IT')}
+function fillOptimized(s){$('nSize').textContent=fmtBytes(s.outputBytes);$('nPaths').textContent=(s.paths||0).toLocaleString('it-IT');$('nPoints').textContent=(s.points||0).toLocaleString('it-IT');$('nDraw').textContent=fmtM(s.drawMm);$('nTravel').textContent=fmtM(s.travelMm);$('nLifts').textContent=(s.penLifts||0).toLocaleString('it-IT');$('reduction').textContent=pct(s.reduction)}
+function resetOptimized(){['nSize','nPaths','nPoints','nDraw','nTravel','nLifts'].forEach(id=>$(id).textContent='—');$('reduction').textContent='—';$('pageBadge').style.display='none';optimizedPreviewUrl=null;downloadUrl=null;$('download').disabled=true}
+function renderPage(a){const p=a.page,v=p.viewBox;const type=p.explicit_viewbox?'viewBox originale':'viewport implicito SVG';$('pageInfo').textContent=`${p.width_mm.toFixed(2)} × ${p.height_mm.toFixed(2)} mm · coordinate ${v.w.toFixed(2)} × ${v.h.toFixed(2)} · ${type}`;$('pageCard').innerHTML=`<strong>${p.width_mm.toFixed(2)} × ${p.height_mm.toFixed(2)} mm</strong><span>${type} · coordinate interne ${v.w.toFixed(2)} × ${v.h.toFixed(2)}</span>`}
+function showPreview(kind){const url=kind==='optimized'?optimizedPreviewUrl:originalPreviewUrl;$('showOriginal').classList.toggle('active',kind==='original');$('showOptimized').classList.toggle('active',kind==='optimized');const stage=$('previewStage');stage.innerHTML='';if(!url){stage.innerHTML='<div class="emptyPreview">Anteprima non disponibile.</div>';return}const img=document.createElement('img');img.alt='Anteprima SVG';img.src=url;stage.appendChild(img)}
+function preset(name){currentPreset=name;document.querySelectorAll('[data-preset]').forEach(b=>b.classList.toggle('active',b.dataset.preset===name));const pen=Math.max(.01,+$('pen').value||.05);if(name==='lossless'){$('simplify').value=0;$('minPath').value=0;$('dedupe').value=0;$('precision').value=6}else if(name==='safe'){$('simplify').value=(pen*.5).toFixed(3);$('minPath').value=.5;$('dedupe').value=.002;$('precision').value=3}else{$('simplify').value=(pen*1.5).toFixed(3);$('minPath').value=1.5;$('dedupe').value=.005;$('precision').value=3}}
+function options(){return{mode:currentPreset,simplifyMm:+$('simplify').value,minPathMm:+$('minPath').value,dedupeMm:+$('dedupe').value,precision:+$('precision').value}}
+function upload(file){if(!file)return;currentFile=file;token=null;originalPreviewUrl=null;resetOptimized();$('filename').textContent=file.name;$('optimize').disabled=true;setProgress(0);setStatus('Carico il file nel motore DaxART…');const xhr=new XMLHttpRequest();xhr.open('POST','/api/upload');xhr.setRequestHeader('X-Filename',encodeURIComponent(file.name));xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.upload.onprogress=e=>{if(e.lengthComputable){setProgress(Math.min(.35,e.loaded/e.total*.35));setStatus(`Upload… ${Math.round(e.loaded/e.total*100)}%`)}};xhr.onerror=()=>setStatus('Errore di comunicazione con il motore DaxART.','error');xhr.onload=()=>{let r;try{r=JSON.parse(xhr.responseText)}catch(_){setStatus('Risposta del server non valida.','error');return}if(xhr.status>=400||r.error){setStatus(r.error||'Errore caricamento','error');return}token=r.token;originalPreviewUrl=r.previewUrl;fillOriginal(r.analysis.stats);renderPage(r.analysis);$('warning').textContent=(r.analysis.warnings||[]).join(' ');$('optimize').disabled=false;setProgress(1);setStatus('SVG analizzato dal motore Python. Pronto per l’ottimizzazione.','ok');showPreview('original')};xhr.send(file)}
+async function optimize(){if(!token)return;resetOptimized();$('optimize').disabled=true;setProgress(.02);setStatus('Avvio ottimizzazione sul server…');try{const res=await fetch('/api/optimize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,options:options()})});const r=await res.json();if(!res.ok||r.error)throw new Error(r.error||'Errore avvio');pollJob(r.jobId)}catch(e){$('optimize').disabled=false;setStatus(e.message,'error')}}
+function pollJob(id){clearTimeout(pollTimer);const tick=async()=>{try{const res=await fetch('/api/job?id='+encodeURIComponent(id),{cache:'no-store'});const j=await res.json();if(!res.ok)throw new Error(j.error||'Job non trovato');setStatus(j.message||'Elaborazione…',j.state==='error'?'error':'');if(Number.isFinite(j.progress))setProgress(j.progress);if(j.state==='done'){optimizedPreviewUrl=j.previewUrl;downloadUrl=j.downloadUrl;fillOptimized(j.result.stats);$('pageBadge').style.display=j.result.pageOk?'inline-block':'none';$('warning').textContent=(j.result.warnings||[]).join(' ');$('download').disabled=false;$('optimize').disabled=false;setProgress(1);setStatus('Completato. SVG validato e pagina originale preservata.','ok');showPreview('optimized');return}if(j.state==='error'){$('optimize').disabled=false;setStatus(j.message||'Errore','error');return}pollTimer=setTimeout(tick,450)}catch(e){$('optimize').disabled=false;setStatus(e.message,'error')}};tick()}
+function reset(){clearTimeout(pollTimer);token=null;currentFile=null;originalPreviewUrl=null;optimizedPreviewUrl=null;downloadUrl=null;$('file').value='';$('filename').textContent='';$('optimize').disabled=true;resetOptimized();['oSize','oPaths','oPoints','oDraw','oLifts','oUnsupported'].forEach(id=>$(id).textContent='—');$('pageInfo').textContent='Carica un SVG.';$('pageCard').innerHTML='<strong>Nessun SVG caricato</strong><span>Il formato fisico del foglio verrà rilevato automaticamente.</span>';$('warning').textContent='';setProgress(0);setStatus('Carica un SVG per iniziare.');showPreview('original')}
+const drop=$('drop'),file=$('file');drop.addEventListener('click',()=>file.click());file.addEventListener('change',()=>upload(file.files[0]));['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag')}));['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag')}));drop.addEventListener('drop',e=>upload(e.dataTransfer.files[0]));document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>preset(b.dataset.preset)));$('pen').addEventListener('change',()=>{if(currentPreset!=='lossless')preset(currentPreset)});$('optimize').addEventListener('click',optimize);$('download').addEventListener('click',()=>{if(downloadUrl)location.href=downloadUrl});$('reset').addEventListener('click',reset);$('showOriginal').addEventListener('click',()=>showPreview('original'));$('showOptimized').addEventListener('click',()=>showPreview('optimized'));preset('safe');
+})();
+</script>
+</body>
+</html>
